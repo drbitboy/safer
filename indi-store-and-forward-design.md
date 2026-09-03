@@ -55,7 +55,8 @@ Each host (ground and space) runs the same stack, mirrored:
 
 ```
  local indiserver                                        the link
-        |                                                    |
+        |                                                    ^
+        v                                                    |
    [1a] INDI client (outbound)                          [3a] link-facing
    - reads local server's                                     (outbound)
      setXXX/defXXX XML                                   - drains dirty rows
@@ -66,7 +67,7 @@ Each host (ground and space) runs the same stack, mirrored:
      element)                                               messages
         |                                                  - deletes row from
         v                                                    SQLite on
-   [ SQLite DB ]  <---------------------------------------- accepted send
+   [ SQLite DB ]  -----------------------------------------> accepted send
    outbound-only mailbox
    (dirty/pending changes
    waiting to cross the link)
