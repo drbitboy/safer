@@ -38,16 +38,17 @@ statement, sync model, and architecture decisions log. Read
 
 `indi_xml_bridge.cpp`/`.hpp` was originally written from general
 knowledge of `liblilxml`/`libindi`-style interfaces, with every call
-marked `// VERIFY:`. Brian has since supplied the real `lilxml.h`, and
-the code has been corrected against it — `findXMLAttValu`,
-`pcdataXMLEle`, and `nXMLEle` all matched; `nthXMLEle` did not exist
-(no index-based child accessor in liblilxml) and has been replaced
-with the real stateful iterator, `nextXMLEle(ep, first)`. See
-`indi-saf-cpp/README.md` for the full status.
+marked `// VERIFY:`. Brian has since supplied MagAO-X's own fork of
+`lilxml.h`, and the code has been corrected against it —
+`findXMLAttValu`, `pcdataXMLEle`, and `nXMLEle` all matched;
+`nthXMLEle` did not exist (no index-based child accessor in
+liblilxml) and has been replaced with the real stateful iterator,
+`nextXMLEle(ep, first)`. See `indi-saf-cpp/README.md` for the full
+status.
 
-Still open: whether MagAO-X's own fork of liblilxml (the design
-conversation referenced `github.com/magao-x/MagAOX`, subdirectory
-`INDI/liblilxml/`) differs from the upstream header Brian supplied.
+This resolves the previously-open question of whether MagAO-X's fork
+differs from upstream liblilxml — the fork itself was the source, so
+the API surface used here is fully confirmed.
 
 ## Conventions
 

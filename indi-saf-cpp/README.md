@@ -28,8 +28,9 @@ Corresponds to `indi-store-and-forward-design.md` decisions as of this session.
 `findXMLAttValu`, `nXMLEle`, `nextXMLEle`, `pcdataXMLEle`). This was
 originally written from general knowledge of libindi-family APIs with
 every call marked `// VERIFY:`, since the actual MagAO-X headers
-weren't reachable that session. Brian has since supplied the real
-`lilxml.h` directly, and the code has been corrected against it:
+weren't reachable that session. Brian has since supplied MagAO-X's own
+fork of `lilxml.h` directly, and the code has been corrected against
+it:
 
 - `findXMLAttValu`, `pcdataXMLEle`, `nXMLEle`: confirmed exact match.
 - `nthXMLEle` **does not exist** in liblilxml — there's no
@@ -37,9 +38,8 @@ weren't reachable that session. Brian has since supplied the real
   bug; it's been rewritten to use the real (stateful) iterator,
   `nextXMLEle(ep, first)`.
 
-Still worth checking before relying on this in production: whether
-MagAO-X's fork of liblilxml differs from the upstream header Brian
-supplied.
+This API surface is now fully confirmed against the actual fork this
+bridge targets — no remaining open question on that front.
 
 `recomposeVectorXml()` in the same file does **not** depend on any of
 this — it's plain string templating and can be trusted as-is.
@@ -48,8 +48,8 @@ this — it's plain string templating and can be trusted as-is.
 
 - `libsqlite3` (dev headers) — for `outbound_store.cpp`.
 - C++17 (uses `std::optional`, `std::filesystem`).
-- The real MagAO-X `liblilxml` (and whatever it depends on) — only for
-  `indi_xml_bridge.cpp`'s `decomposeVector()`, once verified.
+- MagAO-X's `liblilxml` fork (and whatever it depends on) — only for
+  `indi_xml_bridge.cpp`'s `decomposeVector()`; API confirmed, see above.
 
 ## Not yet implemented
 

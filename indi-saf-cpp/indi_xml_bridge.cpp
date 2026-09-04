@@ -1,8 +1,8 @@
 // indi_xml_bridge.cpp
 //
-// XMLEle API usage below has been checked against a real lilxml.h
-// (Brian supplied it directly) -- see indi_xml_bridge.hpp for what
-// changed vs. the original unverified draft.
+// XMLEle API usage below has been checked against MagAO-X's own fork
+// of lilxml.h (Brian supplied it directly) -- see indi_xml_bridge.hpp
+// for what changed vs. the original unverified draft.
 
 #include "indi_xml_bridge.hpp"
 #include <sstream>
@@ -14,11 +14,12 @@ std::vector<OutboundElement> decomposeVector(XMLEle* vectorRoot,
                                               const std::string& vecTypeName) {
     std::vector<OutboundElement> out;
 
-    // Confirmed against the real liblilxml.h (Brian supplied it directly):
-    // findXMLAttValu(XMLEle*, const char*) returns a plain char* value
-    // (assigned into std::string here); the header doesn't document
-    // its behavior on a missing attribute, but the common liblilxml
-    // implementation returns "" rather than NULL in that case.
+    // Confirmed against MagAO-X's own fork of liblilxml.h (Brian
+    // supplied it directly): findXMLAttValu(XMLEle*, const char*)
+    // returns a plain char* value (assigned into std::string here);
+    // the header doesn't document its behavior on a missing
+    // attribute, but the common liblilxml implementation returns ""
+    // rather than NULL in that case.
     std::string device   = findXMLAttValu(vectorRoot, "device");
     std::string property = findXMLAttValu(vectorRoot, "name");
 
@@ -39,8 +40,8 @@ std::vector<OutboundElement> decomposeVector(XMLEle* vectorRoot,
             "decomposeVector: vector element missing required device/name attribute");
     }
 
-    // Confirmed against the real liblilxml.h: there is no index-based
-    // child accessor (no "nthXMLEle") -- child iteration is stateful.
+    // Confirmed against MagAO-X's own fork of liblilxml.h: there is
+    // no index-based child accessor (no "nthXMLEle") -- child iteration is stateful.
     // nXMLEle(ep) returns the child count (used here only to reserve
     // vector capacity); the actual walk uses nextXMLEle(ep, first),
     // called with first=1 to get the first child and first=0 on each
