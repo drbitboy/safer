@@ -12,7 +12,7 @@ sides across blackouts.
 
 Read `indi-store-and-forward-design.md` first. It has the full problem
 statement, sync model, and architecture decisions log. Read
-`indi-ssf-cpp/README.md` for what's implemented vs. stubbed vs. unverified.
+`indi-saf-cpp/README.md` for what's implemented vs. stubbed vs. unverified.
 
 ## Key facts to hold onto
 

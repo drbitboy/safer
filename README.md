@@ -9,7 +9,7 @@ link that is only available during scheduled contact windows.
   design notes: problem statement, sync model, INDI protocol structural
   facts, the 4-component pipeline architecture, file-naming scheme, and open
   questions.
-- [`indi-ssf-cpp/`](indi-ssf-cpp/) — starter C++ implementation:
+- [`indi-saf-cpp/`](indi-saf-cpp/) — starter C++ implementation:
   - `outbound_store.hpp/.cpp` — SQLite-backed mailbox, UPSERT-keyed on
     `(device, property, element)`, WAL mode.
   - `wire_format.hpp/.cpp` — text wire-format encode/decode, isolated behind
@@ -21,7 +21,7 @@ link that is only available during scheduled contact windows.
     rows and recompose rows back into INDI XML.
   - `example_3a_loop.cpp` — illustrative drain loop tying the pieces
     together.
-  - See `indi-ssf-cpp/README.md` for what's verified against the INDI spec
+  - See `indi-saf-cpp/README.md` for what's verified against the INDI spec
     vs. still assumed/unverified.
 - `conversation-transcript.md` — transcript of the design conversation that
   produced this code, kept alongside it in case anything needs to be
