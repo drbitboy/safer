@@ -6,7 +6,7 @@
 #include <sstream>
 #include <iomanip>
 
-namespace ssf {
+namespace saf {
 
 namespace {
 
@@ -217,4 +217,4 @@ long long OutboundStore::pendingCount() {
     return count;
 }
 
-} // namespace ssf
+} // namespace saf

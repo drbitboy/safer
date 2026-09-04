@@ -27,7 +27,7 @@
 #include <sstream>
 #include <filesystem>
 
-namespace ssf {
+namespace saf {
 
 class SpoolWriter {
 public:
@@ -123,4 +123,4 @@ int SpoolReader::pollOnce(Handler handler) {
     return processed;
 }
 
-} // namespace ssf
+} // namespace saf

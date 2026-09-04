@@ -4,7 +4,7 @@
 #include <sstream>
 #include <vector>
 
-namespace ssf {
+namespace saf {
 
 namespace {
 
@@ -83,4 +83,4 @@ OutboundElement decodeWireMessage(const std::string& line) {
     return el;
 }
 
-} // namespace ssf
+} // namespace saf

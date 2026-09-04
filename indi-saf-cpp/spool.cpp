@@ -5,7 +5,7 @@
 #include <stdexcept>
 #include <iomanip>
 
-namespace ssf {
+namespace saf {
 
 namespace fs = std::filesystem;
 
@@ -63,4 +63,4 @@ SpoolReader::SpoolReader(std::string directory) : dir_(std::move(directory)) {
     fs::create_directories(dir_);
 }
 
-} // namespace ssf
+} // namespace saf

@@ -17,7 +17,7 @@
 #include <string>
 #include <optional>
 
-namespace ssf {
+namespace saf {
 
 enum class SendResult {
     Accepted,   // link took custody / confirmed -- meaning TBD, see above
@@ -57,4 +57,4 @@ public:
     }
 };
 
-} // namespace ssf
+} // namespace saf

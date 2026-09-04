@@ -8,7 +8,7 @@
 #include <sstream>
 #include <stdexcept>
 
-namespace ssf {
+namespace saf {
 
 std::vector<OutboundElement> decomposeVector(XMLEle* vectorRoot,
                                               const std::string& vecTypeName) {
@@ -129,4 +129,4 @@ std::string recomposeVectorXml(const OutboundElement& el, bool isSetNotDef) {
     return oss.str();
 }
 
-} // namespace ssf
+} // namespace saf

@@ -11,7 +11,7 @@
 #include <chrono>
 #include <iostream>
 
-void run3aLoop(ssf::OutboundStore& store, ssf::ILinkApi& link) {
+void run3aLoop(saf::OutboundStore& store, saf::ILinkApi& link) {
     using namespace std::chrono_literals;
 
     while (true) {
@@ -27,18 +27,18 @@ void run3aLoop(ssf::OutboundStore& store, ssf::ILinkApi& link) {
         }
 
         for (const auto& el : pending) {
-            std::string wireMsg = ssf::encodeWireMessage(el);
-            ssf::SendResult result = link.send(wireMsg);
+            std::string wireMsg = saf::encodeWireMessage(el);
+            saf::SendResult result = link.send(wireMsg);
 
             switch (result) {
-                case ssf::SendResult::Accepted:
+                case saf::SendResult::Accepted:
                     // Design-doc decision #4 (flagged for revisit once
                     // the real link API semantics are known): delete
                     // on accepted send, trusting "accepted" to mean
                     // durably delivered.
                     store.erase(el.device, el.property, el.element);
                     break;
-                case ssf::SendResult::Rejected:
+                case saf::SendResult::Rejected:
                     // Leave the row in place; log and move on. A
                     // rejected message for a key that gets updated
                     // again later will simply be superseded by the
@@ -47,7 +47,7 @@ void run3aLoop(ssf::OutboundStore& store, ssf::ILinkApi& link) {
                               << el.device << "." << el.property << "."
                               << el.element << "\n";
                     break;
-                case ssf::SendResult::LinkDown:
+                case saf::SendResult::LinkDown:
                     // Window closed mid-drain -- stop this pass,
                     // remaining pending rows are retried next time
                     // isLinkUp() is true.

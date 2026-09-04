@@ -40,7 +40,7 @@
 #include <optional>
 #include <sqlite3.h>
 
-namespace ssf {
+namespace saf {
 
 struct OutboundElement {
     std::string device;
@@ -94,4 +94,4 @@ private:
     void execOrThrow(const std::string& sql);
 };
 
-} // namespace ssf
+} // namespace saf

@@ -25,7 +25,7 @@ extern "C" {
 #include "lilxml.h"   // VERIFY: exact path, e.g. "INDI/liblilxml/lilxml.h"
 }
 
-namespace ssf {
+namespace saf {
 
 // --- 1a: decompose -----------------------------------------------------
 //
@@ -76,4 +76,4 @@ std::string recomposeVectorXml(const OutboundElement& el, bool isSetNotDef);
     // very first definition of a property to a fresh indiserver
     // (not the common case for a running bridge).
 
-} // namespace ssf
+} // namespace saf

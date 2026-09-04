@@ -24,7 +24,7 @@
 #include <string>
 #include "outbound_store.hpp"
 
-namespace ssf {
+namespace saf {
 
 // Serializes one OutboundElement to the current wire format.
 // Throws std::runtime_error if any field contains the delimiter ('|')
@@ -38,4 +38,4 @@ std::string encodeWireMessage(const OutboundElement& el);
 // std::runtime_error on malformed input (wrong field count).
 OutboundElement decodeWireMessage(const std::string& line);
 
-} // namespace ssf
+} // namespace saf
