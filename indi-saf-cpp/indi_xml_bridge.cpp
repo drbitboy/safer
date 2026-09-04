@@ -1,8 +1,8 @@
 // indi_xml_bridge.cpp
 //
-// See the *** CAVEAT *** at the top of indi_xml_bridge.hpp before
-// relying on decomposeVector(). recomposeVectorXml() has no such
-// dependency.
+// XMLEle API usage below has been checked against a real lilxml.h
+// (Brian supplied it directly) -- see indi_xml_bridge.hpp for what
+// changed vs. the original unverified draft.
 
 #include "indi_xml_bridge.hpp"
 #include <sstream>
@@ -14,9 +14,11 @@ std::vector<OutboundElement> decomposeVector(XMLEle* vectorRoot,
                                               const std::string& vecTypeName) {
     std::vector<OutboundElement> out;
 
-    // VERIFY: attribute accessor name/signature. Common libindi form:
-    //   const char* findXMLAttValu(XMLEle *ele, const char *name);
-    // which returns "" (not nullptr) if the attribute is absent.
+    // Confirmed against the real liblilxml.h (Brian supplied it directly):
+    // findXMLAttValu(XMLEle*, const char*) returns a plain char* value
+    // (assigned into std::string here); the header doesn't document
+    // its behavior on a missing attribute, but the common liblilxml
+    // implementation returns "" rather than NULL in that case.
     std::string device   = findXMLAttValu(vectorRoot, "device");
     std::string property = findXMLAttValu(vectorRoot, "name");
 
@@ -37,15 +39,16 @@ std::vector<OutboundElement> decomposeVector(XMLEle* vectorRoot,
             "decomposeVector: vector element missing required device/name attribute");
     }
 
-    // VERIFY: child-iteration API. Common libindi form:
-    //   int nXMLEle(XMLEle *ele);
-    //   XMLEle* nextXMLEle(XMLEle *ele, int init);   // or similar iterator
-    // Sketch below uses a generic "for each child" idiom -- adjust to
-    // whatever MagAO-X's fork actually exposes (could be
-    // childrenXMLEle()/an index-based loop, etc.)
-    int nChildren = nXMLEle(vectorRoot);              // VERIFY
-    for (int i = 0; i < nChildren; ++i) {
-        XMLEle* child = nthXMLEle(vectorRoot, i);       // VERIFY
+    // Confirmed against the real liblilxml.h: there is no index-based
+    // child accessor (no "nthXMLEle") -- child iteration is stateful.
+    // nXMLEle(ep) returns the child count (used here only to reserve
+    // vector capacity); the actual walk uses nextXMLEle(ep, first),
+    // called with first=1 to get the first child and first=0 on each
+    // subsequent call, until it returns NULL. This matches the usage
+    // example in lilxml.h itself.
+    out.reserve(static_cast<size_t>(nXMLEle(vectorRoot)));
+    for (XMLEle* child = nextXMLEle(vectorRoot, 1); child != nullptr;
+         child = nextXMLEle(vectorRoot, 0)) {
 
         OutboundElement el;
         el.device   = device;
@@ -58,7 +61,7 @@ std::vector<OutboundElement> decomposeVector(XMLEle* vectorRoot,
         el.vec_label   = vecLabel;
         el.vec_group   = vecGroup;
 
-        el.element = findXMLAttValu(child, "name");     // VERIFY
+        el.element = findXMLAttValu(child, "name");
         if (el.element.empty()) {
             // Per spec, name is #REQUIRED on every element -- treat a
             // missing one as malformed input and skip rather than
@@ -66,14 +69,13 @@ std::vector<OutboundElement> decomposeVector(XMLEle* vectorRoot,
             continue;
         }
 
-        std::string label = findXMLAttValu(child, "label"); // VERIFY
+        std::string label = findXMLAttValu(child, "label");
         el.elem_label = label.empty() ? std::nullopt
                                        : std::optional<std::string>(label);
 
-        // VERIFY: text-content accessor. Common libindi form:
-        //   char* pcdataXMLEle(XMLEle *ele);
-        // (returns the raw PCDATA / text content between the tags)
-        const char* value = pcdataXMLEle(child);         // VERIFY
+        // Confirmed: pcdataXMLEle(XMLEle*) returns char* (text content
+        // between the tags).
+        const char* value = pcdataXMLEle(child);
         el.value = value ? value : "";
 
         out.push_back(std::move(el));

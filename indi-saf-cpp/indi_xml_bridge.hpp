@@ -1,15 +1,24 @@
 // indi_xml_bridge.hpp
 //
-// *** CAVEAT ***
-// This file assumes the standard liblilxml/libindi-family C API
-// (LilXML*, XMLEle*, XMLAtt*, newLilXML, readXMLEle, findXMLEle,
-// findXMLAtt, findAttValu, editXMLEle, etc.) that is consistent across
-// INDI-derived codebases. I was NOT able to browse the actual headers
-// in magao-x/MagAOX/INDI/liblilxml this session -- GitHub's file/raw
-// content did not come back through search or fetch. Every call below
-// is marked // VERIFY: -- check function names, parameter order/types,
-// and header paths against the real MagAO-X source
-// (INDI/liblilxml/lilxml.h, INDI/libcommon/) before compiling.
+// *** UPDATE ***
+// The liblilxml API used below was originally written from general
+// knowledge of libindi-family C APIs (unable to browse the actual
+// MagAO-X headers in that session), with every call marked // VERIFY.
+// Brian has since supplied the real lilxml.h directly, and it has been
+// checked against that:
+//   - findXMLAttValu, pcdataXMLEle, nXMLEle: confirmed exact match.
+//   - nthXMLEle: does NOT exist in liblilxml -- there is no index-based
+//     child accessor. Child iteration is stateful via
+//     nextXMLEle(XMLEle *ep, int first) (first=1 for the first child,
+//     first=0 on each subsequent call, NULL when done). decomposeVector()
+//     below has been rewritten to use this instead of the nonexistent
+//     nthXMLEle.
+//
+// Still worth double-checking before relying on this in production:
+// whether MagAO-X's fork of liblilxml (if it differs from the upstream
+// header Brian supplied) changes any of this, and the exact behavior of
+// findXMLAttValu on a missing attribute (the header has no doc comment
+// for it; assumed to return "" based on common liblilxml behavior).
 //
 // Everything else in this bridge (the decompose/recompose *logic*, the
 // OutboundElement shape, the wire format) does not depend on this
@@ -20,7 +29,9 @@
 #include <vector>
 #include "outbound_store.hpp"
 
-// VERIFY: header path/name for MagAO-X's fork of liblilxml.
+// VERIFY: header path/name for MagAO-X's fork of liblilxml -- the copy
+// Brian supplied is the upstream/canonical liblilxml.h; confirm
+// MagAO-X's fork (if any) matches before assuming this path is right.
 extern "C" {
 #include "lilxml.h"   // VERIFY: exact path, e.g. "INDI/liblilxml/lilxml.h"
 }
@@ -40,11 +51,9 @@ namespace saf {
 // are populated only if present as XML attributes on the vector or
 // child element (per the spec, most are #IMPLIED / optional).
 //
-// VERIFY: XMLEle*, findXMLAtt, findXMLEle, valuXMLAtt / cdataXMLEle (or
-// whatever MagAO-X's fork calls the "get text content of this element"
-// accessor -- names vary slightly between libindi forks) all need
-// confirming against the real header.
-std::vector<OutboundElement> decomposeVector(XMLEle* vectorRoot, // VERIFY: type
+// XMLEle*, findXMLAttValu, pcdataXMLEle, nXMLEle, and nextXMLEle are
+// all confirmed against the real lilxml.h (see the UPDATE note above).
+std::vector<OutboundElement> decomposeVector(XMLEle* vectorRoot,
                                               const std::string& vecTypeName);
     // vecTypeName: "Text" | "Number" | "Switch" | "Light" -- caller
     // determines this from the outer tag name (e.g. "setNumberVector")

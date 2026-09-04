@@ -36,13 +36,18 @@ statement, sync model, and architecture decisions log. Read
 
 ## What's unverified
 
-`indi_xml_bridge.cpp`/`.hpp` contains `// VERIFY:` comments wherever the
-INDI XML parsing API was written from general knowledge of
-`liblilxml`/`libindi`-style interfaces rather than confirmed against an
-actual library header. Before relying on this in the real pipeline,
-check it against a real INDI client library (the design conversation
-referenced `github.com/magao-x/MagAOX`, subdirectory `INDI/`, e.g.
-`indiserver.c`, `liblilxml/`, `libcommon/`) or `libindi` upstream.
+`indi_xml_bridge.cpp`/`.hpp` was originally written from general
+knowledge of `liblilxml`/`libindi`-style interfaces, with every call
+marked `// VERIFY:`. Brian has since supplied the real `lilxml.h`, and
+the code has been corrected against it — `findXMLAttValu`,
+`pcdataXMLEle`, and `nXMLEle` all matched; `nthXMLEle` did not exist
+(no index-based child accessor in liblilxml) and has been replaced
+with the real stateful iterator, `nextXMLEle(ep, first)`. See
+`indi-saf-cpp/README.md` for the full status.
+
+Still open: whether MagAO-X's own fork of liblilxml (the design
+conversation referenced `github.com/magao-x/MagAOX`, subdirectory
+`INDI/liblilxml/`) differs from the upstream header Brian supplied.
 
 ## Conventions
 
