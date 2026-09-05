@@ -7,11 +7,16 @@ link that is only available during scheduled contact windows.
 > **noSQL branch note:** everything below describing the outbound
 > mailbox as SQLite (section 2, the section-4 diagram, decision #3,
 > open question on SQLite concurrency) reflects the `develop` branch.
-> On `noSQL`, the outbound mailbox is a file-backed store instead —
-> see `indi-saf-cpp/outbound_store.hpp` and `indi-saf-cpp/README.md`
-> for the current design. The latest-value-wins model, the
-> `(device, property, element)` decomposition, and the inbound
-> file-spool section are unchanged.
+> On `noSQL`, the mailbox is a file-backed `FileMailbox` instead, used
+> symmetrically on BOTH sides (an outbound instance and a separate
+> inbound instance) — the inbound file-spool section (#4/#5 below) is
+> also superseded on this branch, since `FileMailbox` replaces it too.
+> See `indi-saf-cpp/mailbox.hpp` and `indi-saf-cpp/README.md` for the
+> current design. The latest-value-wins model and the
+> `(device, property, element)` decomposition are unchanged; the
+> mailbox key additionally includes `msg_type` on this branch (see
+> `mailbox.hpp`), and cross-key delivery order is confirmed not to be
+> a requirement.
 
 ---
 

@@ -2,11 +2,11 @@
 //
 // Compact-ish TEXT wire format for a single (device, property, element)
 // change crossing the link, AND now (on the noSQL branch) doubling as
-// the on-disk content of each outbound_store.hpp pending file --
+// the on-disk content of each mailbox.hpp pending file --
 // see that header for the file-naming scheme this pairs with.
 // Deliberately isolated in its own function/translation-unit so it
 // can be swapped for a genuinely compact (e.g. binary/varint-keyed)
-// encoding later without touching 3a, 1b, or OutboundStore. Nothing
+// encoding later without touching 3a, 1b, or FileMailbox. Nothing
 // outside this file should know or assume anything about the
 // on-the-wire byte layout.
 //
@@ -25,20 +25,20 @@
 
 #pragma once
 #include <string>
-#include "outbound_store.hpp"
+#include "mailbox.hpp"
 
 namespace saf {
 
-// Serializes one OutboundElement to the current wire format.
+// Serializes one MailboxElement to the current wire format.
 // Throws std::runtime_error if any field contains the delimiter ('|')
 // or a newline, since the current line-oriented format can't escape
 // those -- callers (1a) should sanitize/reject such values at
 // decompose time rather than relying on this function to sanitize.
-std::string encodeWireMessage(const OutboundElement& el);
+std::string encodeWireMessage(const MailboxElement& el);
 
-// Parses one wire-format line back into an OutboundElement-shaped
+// Parses one wire-format line back into an MailboxElement-shaped
 // struct. Used by 1b when reading a spool file. Throws
 // std::runtime_error on malformed input (wrong field count).
-OutboundElement decodeWireMessage(const std::string& line);
+MailboxElement decodeWireMessage(const std::string& line);
 
 } // namespace saf

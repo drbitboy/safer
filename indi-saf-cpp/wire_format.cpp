@@ -19,17 +19,17 @@ void checkSafe(const std::string& field, const char* fieldName) {
     }
 }
 
-// Stricter check for the four fields that ALSO become part of an
-// OutboundStore filename (see outbound_store.cpp's keyBasename):
+// Stricter check for the four fields that ALSO become part of a
+// FileMailbox filename (see mailbox.cpp's keyBasename):
 // msg_type, device, property, element. '/' would corrupt the path;
-// checked again here (in addition to OutboundStore's own check) so
+// checked again here (in addition to FileMailbox's own check) so
 // encodeWireMessage() fails fast regardless of caller.
 void checkSafeAndFilename(const std::string& field, const char* fieldName) {
     checkSafe(field, fieldName);
     if (field.find('/') != std::string::npos) {
         throw std::runtime_error(
             std::string("wire_format: field '") + fieldName +
-            "' contains '/', unsafe for use in an OutboundStore filename: " + field);
+            "' contains '/', unsafe for use in a FileMailbox filename: " + field);
     }
 }
 
@@ -39,7 +39,7 @@ std::string emitOpt(const std::optional<std::string>& v) {
 
 } // namespace
 
-std::string encodeWireMessage(const OutboundElement& el) {
+std::string encodeWireMessage(const MailboxElement& el) {
     checkSafeAndFilename(el.msg_type, "msg_type");
     checkSafeAndFilename(el.device, "device");
     checkSafeAndFilename(el.property, "property");
@@ -64,7 +64,7 @@ std::string encodeWireMessage(const OutboundElement& el) {
     return oss.str();
 }
 
-OutboundElement decodeWireMessage(const std::string& line) {
+MailboxElement decodeWireMessage(const std::string& line) {
     std::vector<std::string> fields;
     std::string cur;
     for (char c : line) {
@@ -83,7 +83,7 @@ OutboundElement decodeWireMessage(const std::string& line) {
             std::to_string(fields.size()) + ": " + line);
     }
 
-    OutboundElement el;
+    MailboxElement el;
     el.msg_type = fields[0];
     el.device   = fields[1];
     el.property = fields[2];

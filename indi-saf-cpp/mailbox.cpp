@@ -1,5 +1,5 @@
-// outbound_store.cpp
-#include "outbound_store.hpp"
+// mailbox.cpp
+#include "mailbox.hpp"
 #include "wire_format.hpp"
 #include <stdexcept>
 #include <filesystem>
@@ -29,12 +29,12 @@ void checkFilenameSafe(const std::string& field, const char* fieldName) {
         field.find('\0') != std::string::npos ||
         field.find('.') != std::string::npos) {
         throw std::runtime_error(
-            std::string("OutboundStore: field '") + fieldName +
+            std::string("FileMailbox: field '") + fieldName +
             "' contains '/', '.', or a null byte, unsafe for a filename: " + field);
     }
 }
 
-std::string keyBasename(const OutboundElement& el) {
+std::string keyBasename(const MailboxElement& el) {
     checkFilenameSafe(el.msg_type, "msg_type");
     checkFilenameSafe(el.device,   "device");
     checkFilenameSafe(el.property, "property");
@@ -45,19 +45,19 @@ std::string keyBasename(const OutboundElement& el) {
 void writeFileOrThrow(const fs::path& path, const std::string& content) {
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
     if (!out) {
-        throw std::runtime_error("OutboundStore: failed to open for write: " + path.string());
+        throw std::runtime_error("FileMailbox: failed to open for write: " + path.string());
     }
     out << content;
     out.flush();
     if (!out) {
-        throw std::runtime_error("OutboundStore: write failed: " + path.string());
+        throw std::runtime_error("FileMailbox: write failed: " + path.string());
     }
 }
 
 std::string readFileOrThrow(const fs::path& path) {
     std::ifstream in(path, std::ios::binary);
     if (!in) {
-        throw std::runtime_error("OutboundStore: failed to open for read: " + path.string());
+        throw std::runtime_error("FileMailbox: failed to open for read: " + path.string());
     }
     std::ostringstream ss;
     ss << in.rdbuf();
@@ -66,16 +66,16 @@ std::string readFileOrThrow(const fs::path& path) {
 
 } // namespace
 
-OutboundStore::OutboundStore(const std::string& directory) : dir_(directory) {
+FileMailbox::FileMailbox(const std::string& directory) : dir_(directory) {
     std::error_code ec;
     fs::create_directories(dir_, ec);
     if (ec) {
-        throw std::runtime_error("OutboundStore: failed to create directory '" +
+        throw std::runtime_error("FileMailbox: failed to create directory '" +
                                   dir_ + "': " + ec.message());
     }
 }
 
-void OutboundStore::upsert(const OutboundElement& el) {
+void FileMailbox::upsert(const MailboxElement& el) {
     const std::string base = keyBasename(el);
     const fs::path initPath  = fs::path(dir_) / (base + ".init");
     const fs::path readyPath = fs::path(dir_) / (base + ".ready");
@@ -93,12 +93,12 @@ void OutboundStore::upsert(const OutboundElement& el) {
     std::error_code ec;
     fs::rename(initPath, readyPath, ec);
     if (ec) {
-        throw std::runtime_error("OutboundStore: rename '" + initPath.string() +
+        throw std::runtime_error("FileMailbox: rename '" + initPath.string() +
                                   "' -> '" + readyPath.string() + "' failed: " + ec.message());
     }
 }
 
-std::vector<PendingRecord> OutboundStore::peekPending(int limit) {
+std::vector<PendingRecord> FileMailbox::peekPending(int limit) {
     struct Entry {
         fs::path path;
         fs::file_time_type mtime;
@@ -144,7 +144,7 @@ std::vector<PendingRecord> OutboundStore::peekPending(int limit) {
     return out;
 }
 
-void OutboundStore::erase(const std::string& filepath) {
+void FileMailbox::erase(const std::string& filepath) {
     std::error_code ec;
     fs::remove(filepath, ec);
     // Deliberately not throwing on failure: if the file is already
@@ -154,7 +154,7 @@ void OutboundStore::erase(const std::string& filepath) {
     // detect those can check fs::exists(filepath) themselves.
 }
 
-long long OutboundStore::pendingCount() {
+long long FileMailbox::pendingCount() {
     long long count = 0;
     for (const auto& dirEntry : fs::directory_iterator(dir_)) {
         if (dirEntry.is_regular_file() &&

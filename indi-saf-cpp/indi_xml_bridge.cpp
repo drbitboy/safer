@@ -10,10 +10,10 @@
 
 namespace saf {
 
-std::vector<OutboundElement> decomposeVector(XMLEle* vectorRoot,
+std::vector<MailboxElement> decomposeVector(XMLEle* vectorRoot,
                                               const std::string& vecTypeName,
                                               const std::string& msgType) {
-    std::vector<OutboundElement> out;
+    std::vector<MailboxElement> out;
 
     // Confirmed against MagAO-X's own fork of liblilxml.h (Brian
     // supplied it directly): findXMLAttValu(XMLEle*, const char*)
@@ -52,7 +52,7 @@ std::vector<OutboundElement> decomposeVector(XMLEle* vectorRoot,
     for (XMLEle* child = nextXMLEle(vectorRoot, 1); child != nullptr;
          child = nextXMLEle(vectorRoot, 0)) {
 
-        OutboundElement el;
+        MailboxElement el;
         el.msg_type = msgType;
         el.device   = device;
         el.property = property;
@@ -87,7 +87,7 @@ std::vector<OutboundElement> decomposeVector(XMLEle* vectorRoot,
     return out;
 }
 
-std::string recomposeVectorXml(const OutboundElement& el, bool isSetNotDef) {
+std::string recomposeVectorXml(const MailboxElement& el) {
     // Self-contained string templating -- deliberately does NOT use
     // liblilxml, so it has no dependency on the unverified API above.
     // device/property/element/value are attacker-free here (already
@@ -109,10 +109,29 @@ std::string recomposeVectorXml(const OutboundElement& el, bool isSetNotDef) {
         return out;
     };
 
-    const std::string prefix = isSetNotDef ? "set" : "def";
-    const std::string vectorTag = prefix + el.vec_type + "Vector";
-    const std::string oneTag    = isSetNotDef ? ("one" + el.vec_type)
-                                               : ("def" + el.vec_type);
+    // msg_type drives both the outer vector tag and the inner element
+    // tag directly now (previously a separate isSetNotDef bool, before
+    // MailboxElement carried msg_type at all -- see mailbox.hpp).
+    // Per the def/set/new element-tag convention: def* vectors nest
+    // def* children (full element metadata); set*/new* vectors nest
+    // one* children (bare name+value). Note there's no legitimate
+    // newLightVector on the wire (Light is a read-only status
+    // indicator, never client-settable) -- if el.msg_type=="new" and
+    // el.vec_type=="Light" reaches here, that's malformed upstream
+    // data; this function doesn't special-case it and will just emit
+    // the (invalid) tag, since catching that is 1a/the sender's job,
+    // not the recompose step's.
+    std::string oneTag;
+    if (el.msg_type == "def") {
+        oneTag = "def" + el.vec_type;
+    } else if (el.msg_type == "set" || el.msg_type == "new") {
+        oneTag = "one" + el.vec_type;
+    } else {
+        throw std::runtime_error(
+            "recomposeVectorXml: unrecognized msg_type '" + el.msg_type +
+            "' (expected def/set/new)");
+    }
+    const std::string vectorTag = el.msg_type + el.vec_type + "Vector";
 
     std::ostringstream oss;
     oss << "<" << vectorTag

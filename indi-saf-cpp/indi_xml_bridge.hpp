@@ -20,13 +20,13 @@
 // against the actual fork this bridge targets.
 //
 // Everything else in this bridge (the decompose/recompose *logic*, the
-// OutboundElement shape, the wire format) does not depend on this
+// MailboxElement shape, the wire format) does not depend on this
 // caveat and can be trusted as specified in the design doc.
 
 #pragma once
 #include <string>
 #include <vector>
-#include "outbound_store.hpp"
+#include "mailbox.hpp"
 
 // VERIFY: header path/name -- Brian's copy is confirmed to be
 // MagAO-X's own fork of liblilxml, so the API surface is right;
@@ -42,9 +42,9 @@ namespace saf {
 //
 // Given one already-parsed INDI vector element (e.g. a setNumberVector
 // or defTextVector received from the local indiserver), produces one
-// OutboundElement per child element (oneNumber/defNumber/oneSwitch/...).
+// MailboxElement per child element (oneNumber/defNumber/oneSwitch/...).
 // Does NOT touch the database -- caller (1a's read loop) is responsible
-// for calling OutboundStore::upsert() on each returned element.
+// for calling FileMailbox::upsert() on each returned element.
 //
 // device/property/element/value/vec_type are always populated.
 // vec_state/vec_perm/vec_timeout/vec_ts/vec_label/vec_group/elem_label
@@ -54,7 +54,7 @@ namespace saf {
 // XMLEle*, findXMLAttValu, pcdataXMLEle, nXMLEle, and nextXMLEle are
 // all confirmed against MagAO-X's own fork of lilxml.h (see the
 // UPDATE note above).
-std::vector<OutboundElement> decomposeVector(XMLEle* vectorRoot,
+std::vector<MailboxElement> decomposeVector(XMLEle* vectorRoot,
                                               const std::string& vecTypeName,
                                               const std::string& msgType);
     // vecTypeName: "Text" | "Number" | "Switch" | "Light" -- caller
@@ -63,12 +63,12 @@ std::vector<OutboundElement> decomposeVector(XMLEle* vectorRoot,
     // (oneNumber/defNumber) doesn't distinguish set* from def*.
     // msgType: "def" | "set" | "new" -- also derived by the caller
     // from the same outer tag name (e.g. "setNumberVector" -> "set").
-    // Populates OutboundElement::msg_type on every returned element;
-    // required by outbound_store.hpp's file-naming scheme.
+    // Populates MailboxElement::msg_type on every returned element;
+    // required by mailbox.hpp's file-naming scheme.
 
 // --- 1b: recompose ------------------------------------------------------
 //
-// Given ONE OutboundElement-shaped record decoded off the wire (see
+// Given ONE MailboxElement-shaped record decoded off the wire (see
 // wire_format.hpp), builds a minimal-but-valid INDI vector XML string
 // containing exactly that one child element, suitable for sending to
 // the local indiserver. Per the protocol spec, partial vectors (only
@@ -83,12 +83,14 @@ std::vector<OutboundElement> decomposeVector(XMLEle* vectorRoot,
 // string templating, since we're only ever emitting one element per
 // vector and don't need a general XML tree builder for that. This
 // keeps it independent of the VERIFY caveat above.
-std::string recomposeVectorXml(const OutboundElement& el, bool isSetNotDef);
-    // isSetNotDef: true  -> emit <setXXXVector>...</setXXXVector>
-    //              false -> emit <defXXXVector>...</defXXXVector>
-    // 1b should use setXXXVector for ordinary forwarded updates; def*
-    // is only relevant if this bridge is ever responsible for the
-    // very first definition of a property to a fresh indiserver
-    // (not the common case for a running bridge).
+std::string recomposeVectorXml(const MailboxElement& el);
+    // Emits <defXXXVector>, <setXXXVector>, or <newXXXVector> based on
+    // el.msg_type ("def" | "set" | "new") -- no separate bool
+    // parameter anymore; msg_type already carries this (added on the
+    // noSQL branch, see mailbox.hpp). Child tag is def* for a def*
+    // message, one* for set*/new* -- matches the protocol's actual
+    // element-tag convention (see the def/set/new discussion earlier
+    // in this project). Throws std::runtime_error if el.msg_type is
+    // anything other than "def"/"set"/"new".
 
 } // namespace saf

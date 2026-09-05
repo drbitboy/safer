@@ -1,24 +1,24 @@
 // example_3a_loop.cpp
 //
-// Illustrative only -- shows how OutboundStore + wire_format + ILinkApi
+// Illustrative only -- shows how FileMailbox + wire_format + ILinkApi
 // compose into 3a's drain loop. Not a complete program (no signal
 // handling, no real scheduling of contact windows, no logging).
 //
-// noSQL branch: OutboundStore is now file-backed (see
-// outbound_store.hpp). peekPending() globs `*.ready` files and
-// returns each as a PendingRecord (parsed OutboundElement + the
+// noSQL branch: FileMailbox is now file-backed (see
+// mailbox.hpp). peekPending() globs `*.ready` files and
+// returns each as a PendingRecord (parsed MailboxElement + the
 // filepath it came from); this loop deletes that exact file via
 // erase(filepath) once the link has accepted the send, same as the
 // SQLite version deleted the row by key.
 
-#include "outbound_store.hpp"
+#include "mailbox.hpp"
 #include "wire_format.hpp"
 #include "link_api.hpp"
 #include <thread>
 #include <chrono>
 #include <iostream>
 
-void run3aLoop(saf::OutboundStore& store, saf::ILinkApi& link) {
+void run3aLoop(saf::FileMailbox& store, saf::ILinkApi& link) {
     using namespace std::chrono_literals;
 
     while (true) {
@@ -34,7 +34,7 @@ void run3aLoop(saf::OutboundStore& store, saf::ILinkApi& link) {
         }
 
         for (const auto& rec : pending) {
-            const saf::OutboundElement& el = rec.el;
+            const saf::MailboxElement& el = rec.el;
             std::string wireMsg = saf::encodeWireMessage(el);
             saf::SendResult result = link.send(wireMsg);
 
@@ -51,7 +51,7 @@ void run3aLoop(saf::OutboundStore& store, saf::ILinkApi& link) {
                     // rejected message for a key that gets updated
                     // again later will simply be overwritten in place
                     // by the next upsert() from 1a (see
-                    // outbound_store.hpp's latest-value-wins note).
+                    // mailbox.hpp's latest-value-wins note).
                     std::cerr << "3a: link rejected message for "
                               << el.msg_type << " " << el.device << "."
                               << el.property << "." << el.element << "\n";

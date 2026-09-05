@@ -10,7 +10,7 @@
 // guarantee the peer has durably received the message, or only that
 // local hardware has taken custody of the bytes? Until that's known,
 // treat SendResult::Accepted conservatively -- it's what currently
-// triggers the pending file's deletion in 3a (outbound_store.hpp),
+// triggers the pending file's deletion in 3a (mailbox.hpp),
 // but that policy is flagged for revisit.
 
 #pragma once
