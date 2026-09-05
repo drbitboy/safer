@@ -10,8 +10,8 @@
 // guarantee the peer has durably received the message, or only that
 // local hardware has taken custody of the bytes? Until that's known,
 // treat SendResult::Accepted conservatively -- it's what currently
-// triggers the SQLite row deletion in 3a, but that policy is flagged
-// for revisit.
+// triggers the pending file's deletion in 3a (outbound_store.hpp),
+// but that policy is flagged for revisit.
 
 #pragma once
 #include <string>

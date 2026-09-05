@@ -1,218 +1,166 @@
 // outbound_store.cpp
 #include "outbound_store.hpp"
+#include "wire_format.hpp"
 #include <stdexcept>
-#include <chrono>
-#include <ctime>
+#include <filesystem>
+#include <fstream>
 #include <sstream>
-#include <iomanip>
+#include <algorithm>
+#include <cstdio>
 
 namespace saf {
 
 namespace {
+namespace fs = std::filesystem;
 
-std::string nowUtcIso8601() {
-    using namespace std::chrono;
-    auto now = system_clock::now();
-    std::time_t t = system_clock::to_time_t(now);
-    std::tm tm_utc{};
-    gmtime_r(&t, &tm_utc);
-    std::ostringstream oss;
-    oss << std::put_time(&tm_utc, "%Y-%m-%dT%H:%M:%SZ");
-    return oss.str();
+bool hasSuffix(const std::string& s, const std::string& suffix) {
+    return s.size() >= suffix.size() &&
+           s.compare(s.size() - suffix.size(), suffix.size(), suffix) == 0;
 }
 
-// Small RAII wrapper around sqlite3_stmt to guarantee finalize() on
-// every exit path, including exceptions.
-struct StmtGuard {
-    sqlite3_stmt* stmt = nullptr;
-    ~StmtGuard() { if (stmt) sqlite3_finalize(stmt); }
-};
-
-void bindTextOrNull(sqlite3_stmt* stmt, int idx, const std::optional<std::string>& v) {
-    if (v.has_value()) {
-        sqlite3_bind_text(stmt, idx, v->c_str(), -1, SQLITE_TRANSIENT);
-    } else {
-        sqlite3_bind_null(stmt, idx);
+// Filename-safety check, separate from wire_format::checkSafe's
+// delimiter check: these four fields become directory-entry names, so
+// '/' (path separator) and '\0' would corrupt or truncate the path.
+// '.' is also rejected here even though the suffix check above is
+// dot-position-independent, just to keep filenames unambiguous to a
+// human glancing at the directory listing.
+void checkFilenameSafe(const std::string& field, const char* fieldName) {
+    if (field.find('/') != std::string::npos ||
+        field.find('\0') != std::string::npos ||
+        field.find('.') != std::string::npos) {
+        throw std::runtime_error(
+            std::string("OutboundStore: field '") + fieldName +
+            "' contains '/', '.', or a null byte, unsafe for a filename: " + field);
     }
 }
 
-std::optional<std::string> columnTextOrNull(sqlite3_stmt* stmt, int idx) {
-    if (sqlite3_column_type(stmt, idx) == SQLITE_NULL) return std::nullopt;
-    const unsigned char* txt = sqlite3_column_text(stmt, idx);
-    return std::string(reinterpret_cast<const char*>(txt));
+std::string keyBasename(const OutboundElement& el) {
+    checkFilenameSafe(el.msg_type, "msg_type");
+    checkFilenameSafe(el.device,   "device");
+    checkFilenameSafe(el.property, "property");
+    checkFilenameSafe(el.element,  "element");
+    return el.msg_type + "__" + el.device + "__" + el.property + "__" + el.element;
+}
+
+void writeFileOrThrow(const fs::path& path, const std::string& content) {
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    if (!out) {
+        throw std::runtime_error("OutboundStore: failed to open for write: " + path.string());
+    }
+    out << content;
+    out.flush();
+    if (!out) {
+        throw std::runtime_error("OutboundStore: write failed: " + path.string());
+    }
+}
+
+std::string readFileOrThrow(const fs::path& path) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) {
+        throw std::runtime_error("OutboundStore: failed to open for read: " + path.string());
+    }
+    std::ostringstream ss;
+    ss << in.rdbuf();
+    return ss.str();
 }
 
 } // namespace
 
-OutboundStore::OutboundStore(const std::string& db_path) {
-    if (sqlite3_open(db_path.c_str(), &db_) != SQLITE_OK) {
-        std::string msg = sqlite3_errmsg(db_);
-        sqlite3_close(db_);
-        db_ = nullptr;
-        throw std::runtime_error("OutboundStore: failed to open DB: " + msg);
-    }
-
-    // WAL mode: cheap default per design-doc decision #3, even though
-    // full concurrency handling between writer (1a) and reader/deleter
-    // (3a) threads is explicitly deferred.
-    execOrThrow("PRAGMA journal_mode=WAL;");
-    execOrThrow("PRAGMA synchronous=NORMAL;");
-
-    execOrThrow(R"SQL(
-        CREATE TABLE IF NOT EXISTS outbound (
-            device      TEXT NOT NULL,
-            property    TEXT NOT NULL,
-            element     TEXT NOT NULL,
-            vec_type    TEXT NOT NULL,
-            value       TEXT NOT NULL,
-            vec_state   TEXT,
-            vec_perm    TEXT,
-            vec_timeout TEXT,
-            vec_ts      TEXT,
-            vec_label   TEXT,
-            vec_group   TEXT,
-            elem_label  TEXT,
-            updated_at  TEXT NOT NULL,
-            PRIMARY KEY (device, property, element)
-        );
-    )SQL");
-
-    // Index to make "oldest pending first" draining efficient once the
-    // table has thousands of rows.
-    execOrThrow(
-        "CREATE INDEX IF NOT EXISTS idx_outbound_updated_at "
-        "ON outbound(updated_at);"
-    );
-}
-
-OutboundStore::~OutboundStore() {
-    if (db_) sqlite3_close(db_);
-}
-
-void OutboundStore::execOrThrow(const std::string& sql) {
-    char* errmsg = nullptr;
-    int rc = sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &errmsg);
-    if (rc != SQLITE_OK) {
-        std::string msg = errmsg ? errmsg : "unknown sqlite error";
-        sqlite3_free(errmsg);
-        throw std::runtime_error("OutboundStore: exec failed: " + msg +
-                                  " (sql: " + sql + ")");
+OutboundStore::OutboundStore(const std::string& directory) : dir_(directory) {
+    std::error_code ec;
+    fs::create_directories(dir_, ec);
+    if (ec) {
+        throw std::runtime_error("OutboundStore: failed to create directory '" +
+                                  dir_ + "': " + ec.message());
     }
 }
 
 void OutboundStore::upsert(const OutboundElement& el) {
-    static const char* sql = R"SQL(
-        INSERT INTO outbound
-            (device, property, element, vec_type, value,
-             vec_state, vec_perm, vec_timeout, vec_ts,
-             vec_label, vec_group, elem_label, updated_at)
-        VALUES (?,?,?,?,?, ?,?,?,?, ?,?,?, ?)
-        ON CONFLICT(device, property, element) DO UPDATE SET
-            vec_type    = excluded.vec_type,
-            value       = excluded.value,
-            vec_state   = excluded.vec_state,
-            vec_perm    = excluded.vec_perm,
-            vec_timeout = excluded.vec_timeout,
-            vec_ts      = excluded.vec_ts,
-            vec_label   = excluded.vec_label,
-            vec_group   = excluded.vec_group,
-            elem_label  = excluded.elem_label,
-            updated_at  = excluded.updated_at;
-    )SQL";
+    const std::string base = keyBasename(el);
+    const fs::path initPath  = fs::path(dir_) / (base + ".init");
+    const fs::path readyPath = fs::path(dir_) / (base + ".ready");
 
-    StmtGuard g;
-    if (sqlite3_prepare_v2(db_, sql, -1, &g.stmt, nullptr) != SQLITE_OK) {
-        throw std::runtime_error(std::string("OutboundStore::upsert prepare failed: ") +
-                                  sqlite3_errmsg(db_));
-    }
+    // Content is the full record, via the same wire format used on
+    // the link -- this file IS effectively what would have been read
+    // back out of the old SQLite row.
+    const std::string content = encodeWireMessage(el);
 
-    sqlite3_bind_text(g.stmt, 1, el.device.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(g.stmt, 2, el.property.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(g.stmt, 3, el.element.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(g.stmt, 4, el.vec_type.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(g.stmt, 5, el.value.c_str(), -1, SQLITE_TRANSIENT);
-    bindTextOrNull(g.stmt, 6, el.vec_state);
-    bindTextOrNull(g.stmt, 7, el.vec_perm);
-    bindTextOrNull(g.stmt, 8, el.vec_timeout);
-    bindTextOrNull(g.stmt, 9, el.vec_ts);
-    bindTextOrNull(g.stmt, 10, el.vec_label);
-    bindTextOrNull(g.stmt, 11, el.vec_group);
-    bindTextOrNull(g.stmt, 12, el.elem_label);
-    std::string ts = nowUtcIso8601();
-    sqlite3_bind_text(g.stmt, 13, ts.c_str(), -1, SQLITE_TRANSIENT);
+    writeFileOrThrow(initPath, content);
 
-    if (sqlite3_step(g.stmt) != SQLITE_DONE) {
-        throw std::runtime_error(std::string("OutboundStore::upsert step failed: ") +
-                                  sqlite3_errmsg(db_));
+    // Atomic on POSIX; silently replaces readyPath if it already
+    // exists, which is exactly the "latest value for this key wins"
+    // behavior upsert() needs -- no separate delete step required.
+    std::error_code ec;
+    fs::rename(initPath, readyPath, ec);
+    if (ec) {
+        throw std::runtime_error("OutboundStore: rename '" + initPath.string() +
+                                  "' -> '" + readyPath.string() + "' failed: " + ec.message());
     }
 }
 
-std::vector<OutboundElement> OutboundStore::peekPending(int limit) {
-    static const char* sql = R"SQL(
-        SELECT device, property, element, vec_type, value,
-               vec_state, vec_perm, vec_timeout, vec_ts,
-               vec_label, vec_group, elem_label
-        FROM outbound
-        ORDER BY updated_at ASC
-        LIMIT ?;
-    )SQL";
+std::vector<PendingRecord> OutboundStore::peekPending(int limit) {
+    struct Entry {
+        fs::path path;
+        fs::file_time_type mtime;
+    };
+    std::vector<Entry> entries;
 
-    StmtGuard g;
-    if (sqlite3_prepare_v2(db_, sql, -1, &g.stmt, nullptr) != SQLITE_OK) {
-        throw std::runtime_error(std::string("OutboundStore::peekPending prepare failed: ") +
-                                  sqlite3_errmsg(db_));
+    for (const auto& dirEntry : fs::directory_iterator(dir_)) {
+        if (!dirEntry.is_regular_file()) continue;
+        if (!hasSuffix(dirEntry.path().filename().string(), ".ready")) continue;
+        std::error_code ec;
+        auto mtime = fs::last_write_time(dirEntry.path(), ec);
+        if (ec) continue; // file may have been removed concurrently; skip
+        entries.push_back({dirEntry.path(), mtime});
     }
-    sqlite3_bind_int(g.stmt, 1, limit);
 
-    std::vector<OutboundElement> out;
-    while (sqlite3_step(g.stmt) == SQLITE_ROW) {
-        OutboundElement el;
-        el.device   = reinterpret_cast<const char*>(sqlite3_column_text(g.stmt, 0));
-        el.property = reinterpret_cast<const char*>(sqlite3_column_text(g.stmt, 1));
-        el.element  = reinterpret_cast<const char*>(sqlite3_column_text(g.stmt, 2));
-        el.vec_type = reinterpret_cast<const char*>(sqlite3_column_text(g.stmt, 3));
-        el.value    = reinterpret_cast<const char*>(sqlite3_column_text(g.stmt, 4));
-        el.vec_state   = columnTextOrNull(g.stmt, 5);
-        el.vec_perm    = columnTextOrNull(g.stmt, 6);
-        el.vec_timeout = columnTextOrNull(g.stmt, 7);
-        el.vec_ts      = columnTextOrNull(g.stmt, 8);
-        el.vec_label   = columnTextOrNull(g.stmt, 9);
-        el.vec_group   = columnTextOrNull(g.stmt, 10);
-        el.elem_label  = columnTextOrNull(g.stmt, 11);
-        out.push_back(std::move(el));
+    std::sort(entries.begin(), entries.end(),
+              [](const Entry& a, const Entry& b) { return a.mtime < b.mtime; });
+
+    std::vector<PendingRecord> out;
+    out.reserve(static_cast<size_t>(std::min<size_t>(entries.size(), static_cast<size_t>(limit))));
+    for (const auto& entry : entries) {
+        if (static_cast<int>(out.size()) >= limit) break;
+        std::string content;
+        try {
+            content = readFileOrThrow(entry.path);
+        } catch (const std::exception&) {
+            // Removed/unreadable between listing and read -- skip,
+            // it'll simply not appear in this pass.
+            continue;
+        }
+        PendingRecord rec;
+        rec.filepath = entry.path.string();
+        try {
+            rec.el = decodeWireMessage(content);
+        } catch (const std::exception&) {
+            // Malformed pending file -- skip rather than crash the
+            // drain loop; leaves the bad file in place for manual
+            // inspection.
+            continue;
+        }
+        out.push_back(std::move(rec));
     }
     return out;
 }
 
-void OutboundStore::erase(const std::string& device,
-                           const std::string& property,
-                           const std::string& element) {
-    static const char* sql =
-        "DELETE FROM outbound WHERE device=? AND property=? AND element=?;";
-    StmtGuard g;
-    if (sqlite3_prepare_v2(db_, sql, -1, &g.stmt, nullptr) != SQLITE_OK) {
-        throw std::runtime_error(std::string("OutboundStore::erase prepare failed: ") +
-                                  sqlite3_errmsg(db_));
-    }
-    sqlite3_bind_text(g.stmt, 1, device.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(g.stmt, 2, property.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(g.stmt, 3, element.c_str(), -1, SQLITE_TRANSIENT);
-    if (sqlite3_step(g.stmt) != SQLITE_DONE) {
-        throw std::runtime_error(std::string("OutboundStore::erase step failed: ") +
-                                  sqlite3_errmsg(db_));
-    }
+void OutboundStore::erase(const std::string& filepath) {
+    std::error_code ec;
+    fs::remove(filepath, ec);
+    // Deliberately not throwing on failure: if the file is already
+    // gone (e.g. removed concurrently, or never existed), the desired
+    // end state -- file absent -- already holds. Genuine permission
+    // errors etc. are silently ignored here too; callers that need to
+    // detect those can check fs::exists(filepath) themselves.
 }
 
 long long OutboundStore::pendingCount() {
-    static const char* sql = "SELECT COUNT(*) FROM outbound;";
-    StmtGuard g;
-    if (sqlite3_prepare_v2(db_, sql, -1, &g.stmt, nullptr) != SQLITE_OK) {
-        throw std::runtime_error(std::string("OutboundStore::pendingCount prepare failed: ") +
-                                  sqlite3_errmsg(db_));
-    }
     long long count = 0;
-    if (sqlite3_step(g.stmt) == SQLITE_ROW) {
-        count = sqlite3_column_int64(g.stmt, 0);
+    for (const auto& dirEntry : fs::directory_iterator(dir_)) {
+        if (dirEntry.is_regular_file() &&
+            hasSuffix(dirEntry.path().filename().string(), ".ready")) {
+            ++count;
+        }
     }
     return count;
 }

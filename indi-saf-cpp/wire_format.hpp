@@ -1,18 +1,21 @@
 // wire_format.hpp
 //
 // Compact-ish TEXT wire format for a single (device, property, element)
-// change crossing the link. Deliberately isolated in its own
-// function/translation-unit so it can be swapped for a genuinely compact
-// (e.g. binary/varint-keyed) encoding later without touching 3a, 1b, or
-// the SQLite schema. Nothing outside this file should know or assume
-// anything about the on-the-wire byte layout.
+// change crossing the link, AND now (on the noSQL branch) doubling as
+// the on-disk content of each outbound_store.hpp pending file --
+// see that header for the file-naming scheme this pairs with.
+// Deliberately isolated in its own function/translation-unit so it
+// can be swapped for a genuinely compact (e.g. binary/varint-keyed)
+// encoding later without touching 3a, 1b, or OutboundStore. Nothing
+// outside this file should know or assume anything about the
+// on-the-wire byte layout.
 //
 // Current format: one line per element change, pipe-delimited, in a
-// fixed field order. Fields that are optional in the DB are emitted
-// empty (but the pipe separator is always present, so field count/order
-// is stable for parsing).
+// fixed field order. Fields that are optional are emitted empty (but
+// the pipe separator is always present, so field count/order is
+// stable for parsing).
 //
-//   device|property|element|vec_type|value|vec_state|vec_perm|
+//   msg_type|device|property|element|vec_type|value|vec_state|vec_perm|
 //   vec_timeout|vec_ts|vec_label|vec_group|elem_label
 //
 // This is intentionally NOT full INDI XML -- that verbosity is exactly

@@ -11,7 +11,8 @@
 namespace saf {
 
 std::vector<OutboundElement> decomposeVector(XMLEle* vectorRoot,
-                                              const std::string& vecTypeName) {
+                                              const std::string& vecTypeName,
+                                              const std::string& msgType) {
     std::vector<OutboundElement> out;
 
     // Confirmed against MagAO-X's own fork of liblilxml.h (Brian
@@ -52,6 +53,7 @@ std::vector<OutboundElement> decomposeVector(XMLEle* vectorRoot,
          child = nextXMLEle(vectorRoot, 0)) {
 
         OutboundElement el;
+        el.msg_type = msgType;
         el.device   = device;
         el.property = property;
         el.vec_type = vecTypeName;

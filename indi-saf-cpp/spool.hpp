@@ -1,9 +1,12 @@
 // spool.hpp
 //
-// Ordered file-spool writer, used by the inbound side only (per current
-// design: outbound durability is handled by SQLite, not a spool file;
-// 3b was eliminated -- the link itself writes directly into the inbound
-// spool directory).
+// Ordered file-spool writer, used by the inbound side. (On the noSQL
+// branch, the outbound side now ALSO uses a file-backed store --
+// outbound_store.hpp -- but with different semantics: keyed,
+// overwrite-in-place `.init`/`.ready` pairs rather than this class's
+// ever-growing, sequentially-ordered spool. The two aren't
+// interchangeable; outbound_store.hpp does not use SpoolWriter or
+// SpoolReader.)
 //
 // Ordering guarantee: filenames are UTC timestamps at 1-second
 // resolution. Any single writer thread targeting one directory must
@@ -14,7 +17,9 @@
 //
 // Each spool directory must have exactly one writer thread. Inbound
 // and outbound use SEPARATE directories (design-doc decision #6), so
-// no cross-thread coordination is needed between them.
+// no cross-thread coordination is needed between them. 3b was
+// eliminated per that same decision -- the link itself writes
+// directly into the inbound spool directory.
 
 #pragma once
 #include <string>

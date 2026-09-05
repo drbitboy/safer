@@ -55,11 +55,16 @@ namespace saf {
 // all confirmed against MagAO-X's own fork of lilxml.h (see the
 // UPDATE note above).
 std::vector<OutboundElement> decomposeVector(XMLEle* vectorRoot,
-                                              const std::string& vecTypeName);
+                                              const std::string& vecTypeName,
+                                              const std::string& msgType);
     // vecTypeName: "Text" | "Number" | "Switch" | "Light" -- caller
     // determines this from the outer tag name (e.g. "setNumberVector")
     // before calling in, since the child tag name alone
     // (oneNumber/defNumber) doesn't distinguish set* from def*.
+    // msgType: "def" | "set" | "new" -- also derived by the caller
+    // from the same outer tag name (e.g. "setNumberVector" -> "set").
+    // Populates OutboundElement::msg_type on every returned element;
+    // required by outbound_store.hpp's file-naming scheme.
 
 // --- 1b: recompose ------------------------------------------------------
 //

@@ -4,6 +4,15 @@
 **Purpose:** Bridge two INDI servers — one on the ground, one in space — over a
 link that is only available during scheduled contact windows.
 
+> **noSQL branch note:** everything below describing the outbound
+> mailbox as SQLite (section 2, the section-4 diagram, decision #3,
+> open question on SQLite concurrency) reflects the `develop` branch.
+> On `noSQL`, the outbound mailbox is a file-backed store instead —
+> see `indi-saf-cpp/outbound_store.hpp` and `indi-saf-cpp/README.md`
+> for the current design. The latest-value-wins model, the
+> `(device, property, element)` decomposition, and the inbound
+> file-spool section are unchanged.
+
 ---
 
 ## 1. Problem Statement

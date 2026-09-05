@@ -18,13 +18,18 @@ statement, sync model, and architecture decisions log. Read
 
 - **Uniqueness key** for any INDI value: `(device, property name, element
   name)`. Not `label` — `label` defaults to `name` when absent and is
-  descriptive metadata, not identity.
+  descriptive metadata, not identity. **noSQL branch caveat**:
+  `OutboundStore`'s file-naming key additionally includes `msg_type`
+  (`def`/`set`/`new`) — see `outbound_store.hpp` for the accepted
+  tradeoff this introduces vs. the SQLite version's key.
 - **Latest-value-wins** sync model, symmetric in both directions. No
   command queue or transition history preserved across a blackout.
 - Four-component pipeline per side:
   1. INDI-client thread — talks to the local `indiserver`, decomposes
      outbound XML into rows, recomposes inbound rows into XML.
-  2. SQLite mailbox — stores latest value per key, both directions.
+  2. Mailbox — stores latest value per key, both directions. **noSQL
+     branch**: file-backed (`outbound_store.hpp`), not SQLite — see
+     `indi-saf-cpp/README.md`. `develop` still uses SQLite.
   3. Link-facing drain thread — moves rows to/from the link when it's up.
   4. (Eliminated) — inbound recompose is handled by the link itself, not a
      separate component.

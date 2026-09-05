@@ -2,25 +2,40 @@
 
 Corresponds to `indi-store-and-forward-design.md` decisions as of this session.
 
+**noSQL branch**: `outbound_store.hpp/.cpp` has been rewritten to use
+plain files instead of SQLite — see its header comment for the full
+scheme. `wire_format.hpp/.cpp` gained a `msg_type` field
+(`"def"|"set"|"new"`) to support the new file-naming key. Everything
+else is unchanged from `develop`.
+
 ## What's implemented and self-contained (no unverified dependencies)
 
-- `outbound_store.hpp/.cpp` — SQLite outbound mailbox. UPSERT-keyed on
-  `(device, property, element)`. Uses the raw `sqlite3` C API directly
-  (my choice, per your "you choose"). WAL mode enabled as a cheap
-  default per decision #3, even though full concurrency handling
-  between the 1a writer and 3a reader/deleter threads is deferred.
+- `outbound_store.hpp/.cpp` — file-backed outbound mailbox (noSQL
+  branch — no SQLite dependency). One `.init`→`.ready` file per
+  `(msg_type, device, property, element)` key in the outbound
+  directory; same-key writes overwrite the pending file in place for
+  latest-value-wins, exactly mirroring what SQLite's
+  `ON CONFLICT DO UPDATE` gave the earlier version. See the header for
+  the full filename scheme and the accepted tradeoff (msg_type is now
+  part of the key, unlike the SQLite version's `(device, property,
+  element)`-only primary key).
 - `wire_format.hpp/.cpp` — text wire format, isolated in its own
   function per your instruction, so it can be swapped for something
-  more compact later without touching 3a, 1b, or the DB schema.
+  more compact later without touching 3a, 1b, or `OutboundStore`. Now
+  also doubles as the on-disk content of each `OutboundStore` pending
+  file, and carries the new `msg_type` field.
 - `link_api.hpp` — stubbed `ILinkApi` interface with a trivial
   `StubLinkApi` for local dev/testing, per your instruction to stub
   the link API out.
 - `spool.hpp/.cpp` — inbound file-spool writer/reader with the UTC
   1-second-resolution + 1.1s-minimum-wait ordering scheme, per
-  decisions #5–7 (no SQLite on the inbound path; separate directories;
-  no 3b component — the link itself is the inbound writer).
+  decisions #5–7 (separate directories; no 3b component — the link
+  itself is the inbound writer). Distinct from `OutboundStore`'s
+  keyed-overwrite scheme — see spool.hpp's header comment.
 - `example_3a_loop.cpp` — illustrative drain loop tying the above
-  together.
+  together; updated for `OutboundStore::peekPending()`'s new
+  `PendingRecord` return type (parsed element + the exact filepath to
+  pass to `erase()`).
 
 ## `indi_xml_bridge.hpp/.cpp` — liblilxml API status
 
@@ -46,8 +61,9 @@ this — it's plain string templating and can be trusted as-is.
 
 ## Build dependencies
 
-- `libsqlite3` (dev headers) — for `outbound_store.cpp`.
-- C++17 (uses `std::optional`, `std::filesystem`).
+- C++17 (uses `std::optional`, `std::filesystem`) — the only
+  dependency for `outbound_store.cpp`/`wire_format.cpp` now that
+  SQLite has been removed on this branch.
 - MagAO-X's `liblilxml` fork (and whatever it depends on) — only for
   `indi_xml_bridge.cpp`'s `decomposeVector()`; API confirmed, see above.
 
