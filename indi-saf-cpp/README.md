@@ -33,8 +33,10 @@ directly instead of a separate bool.
   leftover `*.sending` from a reader that died mid-handling is either
   retried untouched (no newer `*.ready` arrived) or correctly
   superseded (a newer `*.ready` overwrote it, which is
-  latest-value-wins doing its job, not data loss). Verified with a
-  smoke test covering both cases.
+  latest-value-wins doing its job, not data loss). See
+  `test/mailbox_smoketest.cpp` for a runnable check of both cases,
+  plus same-key overwrite and the msg_type-is-part-of-the-key
+  behavior.
 - `wire_format.hpp/.cpp` — text wire format, isolated in its own
   function per your instruction, so it can be swapped for something
   more compact later without touching 3a, 1b, or `FileMailbox`. Also
