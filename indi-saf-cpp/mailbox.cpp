@@ -99,6 +99,34 @@ void FileMailbox::upsert(const MailboxElement& el) {
 }
 
 std::vector<PendingRecord> FileMailbox::peekPending(int limit) {
+    // Phase 1: claim. Rename every *.ready to *.sending. This is what
+    // makes erase() safe -- see class comment in mailbox.hpp. A
+    // rename() here is atomic and, if a *.sending already exists for
+    // the same key (a leftover from a crash before it was erased),
+    // silently overwrites it: the leftover was stale and superseded
+    // by this newer value, so discarding it is correct latest-value-
+    // wins behavior, not data loss.
+    for (const auto& dirEntry : fs::directory_iterator(dir_)) {
+        if (!dirEntry.is_regular_file()) continue;
+        const std::string fname = dirEntry.path().filename().string();
+        if (!hasSuffix(fname, ".ready")) continue;
+
+        fs::path sendingPath = dirEntry.path();
+        sendingPath.replace_filename(
+            fname.substr(0, fname.size() - std::string(".ready").size()) + ".sending");
+
+        std::error_code ec;
+        fs::rename(dirEntry.path(), sendingPath, ec);
+        // Ignore failure here (e.g. removed concurrently by another
+        // process in a multi-reader setup, which this design doesn't
+        // otherwise assume) -- just leaves it for a future pass.
+    }
+
+    // Phase 2: glob *.sending independently of phase 1 above -- this
+    // picks up BOTH what was just claimed AND any leftover *.sending
+    // file from a previous crash that phase 1 didn't touch (because
+    // no fresh *.ready existed for that key). See mailbox.hpp for the
+    // two-case argument this relies on.
     struct Entry {
         fs::path path;
         fs::file_time_type mtime;
@@ -107,7 +135,7 @@ std::vector<PendingRecord> FileMailbox::peekPending(int limit) {
 
     for (const auto& dirEntry : fs::directory_iterator(dir_)) {
         if (!dirEntry.is_regular_file()) continue;
-        if (!hasSuffix(dirEntry.path().filename().string(), ".ready")) continue;
+        if (!hasSuffix(dirEntry.path().filename().string(), ".sending")) continue;
         std::error_code ec;
         auto mtime = fs::last_write_time(dirEntry.path(), ec);
         if (ec) continue; // file may have been removed concurrently; skip
@@ -147,18 +175,26 @@ std::vector<PendingRecord> FileMailbox::peekPending(int limit) {
 void FileMailbox::erase(const std::string& filepath) {
     std::error_code ec;
     fs::remove(filepath, ec);
-    // Deliberately not throwing on failure: if the file is already
-    // gone (e.g. removed concurrently, or never existed), the desired
-    // end state -- file absent -- already holds. Genuine permission
-    // errors etc. are silently ignored here too; callers that need to
-    // detect those can check fs::exists(filepath) themselves.
+    // Safe unconditional delete-by-path: filepath always points at a
+    // *.sending file here (see peekPending()'s phase 1), and nothing
+    // other than peekPending()'s own claim sweep ever creates or
+    // touches a *.sending file. So unlike deleting a *.ready file
+    // directly, there's no reader/writer race window on this path --
+    // upsert() only ever writes *.init and *.ready, never *.sending.
+    //
+    // Not throwing on failure: if the file is already gone (e.g.
+    // removed concurrently, or never existed), the desired end state
+    // -- file absent -- already holds. Genuine permission errors etc.
+    // are silently ignored here too; callers that need to detect
+    // those can check fs::exists(filepath) themselves.
 }
 
 long long FileMailbox::pendingCount() {
     long long count = 0;
     for (const auto& dirEntry : fs::directory_iterator(dir_)) {
-        if (dirEntry.is_regular_file() &&
-            hasSuffix(dirEntry.path().filename().string(), ".ready")) {
+        if (!dirEntry.is_regular_file()) continue;
+        const std::string fname = dirEntry.path().filename().string();
+        if (hasSuffix(fname, ".ready") || hasSuffix(fname, ".sending")) {
             ++count;
         }
     }

@@ -50,12 +50,43 @@
 // which is a reasonable approximation of write order but not a
 // guarantee) -- confirmed not a concern for this bridge.
 //
-// Read/consume path: globs the directory for `*.ready` files, oldest
-// (by file mtime) first, reads+parses each into a MailboxElement, and
-// the caller deletes the file directly by path once it's been fully
-// handled (sent to the link, for outbound; recomposed and sent to the
-// local indiserver, for inbound). See example_3a_loop.cpp (outbound)
-// and example_1b_loop.cpp (inbound).
+// Read/consume path (peekPending): a two-phase claim-then-glob scheme
+// that makes erase() race-free without any locking or timeout/reaper
+// logic. Each call:
+//
+//   1. Claim: renames every current `*.ready` to `*.sending`. rename()
+//      is atomic, so this is a safe "take ownership" step -- once a
+//      file is `*.sending`, upsert() will never touch it again
+//      (upsert() only ever creates `*.init`/`*.ready`). If a
+//      `*.sending` already exists for that key -- a leftover from a
+//      previous run that crashed before erase() ran -- the rename
+//      silently overwrites it, which is correct: the leftover was
+//      stale, superseded by this newer value, so discarding it is
+//      latest-value-wins doing its job, not data loss.
+//   2. Glob: lists `*.sending` (independently of what step 1 just
+//      claimed), oldest-by-mtime first, reads+parses up to `limit`
+//      into MailboxElement, returns each as a PendingRecord.
+//
+// The caller deletes the returned filepath directly via erase() once
+// the record has been fully handled (sent to the link, for outbound;
+// recomposed and sent to the local indiserver, for inbound). Because
+// erase() only ever operates on a `*.sending` path -- which nothing
+// but this class's own claim step ever creates -- there is no
+// read-then-delete race with a concurrent upsert() the way there
+// would be if erase() deleted a `*.ready` path directly (an earlier,
+// pre-claim design on this branch had exactly that race: a writer's
+// upsert() landing between a read and the matching erase() would get
+// silently deleted before ever being sent).
+//
+// Crash recovery falls out of this for free, no reaper needed: a
+// `*.sending` file left behind by a reader that died mid-handling is
+// picked up again by the very next peekPending() call, in one of two
+// ways -- either no newer `*.ready` exists for that key, and step 2
+// finds the leftover `*.sending` untouched and retries it; or a
+// legitimately newer `*.ready` DOES exist, and step 1 overwrites the
+// leftover with it, which (per the paragraph above) is correct
+// behavior, not a bug. See example_3a_loop.cpp (outbound) and
+// example_1b_loop.cpp (inbound) for how callers use this.
 
 #pragma once
 #include <string>
@@ -109,22 +140,32 @@ public:
     // guards '/' for this reason.
     void upsert(const MailboxElement& el);
 
-    // Globs the directory for `*.ready` files, sorted oldest-first by
-    // file modification time, and returns up to `limit` of them
-    // parsed into MailboxElement. Does NOT delete anything -- the
-    // caller is responsible for calling erase() per file once the
-    // record has been fully handled.
+    // Two-phase claim-then-glob: first renames every current
+    // `*.ready` to `*.sending` (atomic; silently supersedes any
+    // leftover `*.sending` for the same key from a prior crash), then
+    // globs `*.sending`, sorted oldest-first by file modification
+    // time, and returns up to `limit` of them parsed into
+    // MailboxElement. Does NOT delete anything -- the caller is
+    // responsible for calling erase() per file once the record has
+    // been fully handled. See the class comment above for why this
+    // two-phase scheme (rather than reading `*.ready` directly) is
+    // what makes erase() race-free.
     std::vector<PendingRecord> peekPending(int limit = 100);
 
     // Deletes one pending file by the exact path returned from
-    // peekPending(). Safe to call on a path that no longer exists
-    // (e.g. concurrently removed) -- this is a no-op in that case,
-    // not an error, since the desired end state (file gone) already
-    // holds.
+    // peekPending() (always a `*.sending` path). Safe to call on a
+    // path that no longer exists (e.g. concurrently removed) -- this
+    // is a no-op in that case, not an error, since the desired end
+    // state (file gone) already holds. Safe with respect to a
+    // concurrent upsert() too: upsert() never creates or touches a
+    // `*.sending` file, only `*.init`/`*.ready`, so there is no
+    // read-then-delete race on the path this deletes.
     void erase(const std::string& filepath);
 
-    // Convenience: how many `*.ready` files are currently pending.
-    // Useful for logging/telemetry on link-up/link-down transitions.
+    // Convenience: how many pending records currently exist, counting
+    // both `*.ready` (not yet claimed) and `*.sending` (claimed,
+    // in-flight or awaiting retry). Useful for logging/telemetry on
+    // link-up/link-down transitions.
     long long pendingCount();
 
 private:

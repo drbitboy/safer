@@ -24,6 +24,17 @@ directly instead of a separate bool.
   `def` and a pending `set` for the same element are two separate
   files), and cross-key delivery order is not preserved or required —
   only same-key latest-value-wins matters.
+
+  `peekPending()` uses a two-phase claim-then-glob scheme:
+  `*.ready`→`*.sending` (atomic rename, claims ownership) then globs
+  `*.sending` independently. This makes `erase()` race-free against a
+  concurrent `upsert()` — `upsert()` never touches a `*.sending` file
+  — and gives crash recovery for free with no reaper/timeout: a
+  leftover `*.sending` from a reader that died mid-handling is either
+  retried untouched (no newer `*.ready` arrived) or correctly
+  superseded (a newer `*.ready` overwrote it, which is
+  latest-value-wins doing its job, not data loss). Verified with a
+  smoke test covering both cases.
 - `wire_format.hpp/.cpp` — text wire format, isolated in its own
   function per your instruction, so it can be swapped for something
   more compact later without touching 3a, 1b, or `FileMailbox`. Also
