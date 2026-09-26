@@ -12,7 +12,12 @@ sides across blackouts.
 
 Read `indi-store-and-forward-design.md` first. It has the full problem
 statement, sync model, and architecture decisions log. Read
-`indi-saf-cpp/README.md` for what's implemented vs. stubbed vs. unverified.
+`indi-saf-cpp/README.md` for what's implemented vs. stubbed vs.
+unverified, and for the `lib/`/`include/`/`app/`/`third_party/`
+directory layout. There's a real `Makefile` now
+(`cd indi-saf-cpp && make` builds `saf_local`, `make test` runs
+everything in `../test/`) — use it rather than hand-typing `g++`
+invocations.
 
 ## Key facts to hold onto
 
@@ -34,7 +39,7 @@ statement, sync model, and architecture decisions log. Read
      `saf_local.cpp` (real, not illustrative) — sharing a single TCP
      connection to `indiserver`, since both are just "the INDI client"
      talking to the same local server. See
-     `indi-saf-cpp/saf_local.hpp` for the loop shape.
+     `indi-saf-cpp/include/saf_local.hpp` for the loop shape.
   2. Mailbox — stores latest value per key, both directions. **noSQL
      branch**: file-backed (`mailbox.hpp`'s `FileMailbox`), not
      SQLite, and used symmetrically on both sides (one instance per
@@ -65,7 +70,8 @@ differs from upstream liblilxml — the fork itself was the source, so
 the API surface used here is fully confirmed.
 
 `liblilxml`/`base64` are now vendored in-tree
-(`indi-saf-cpp/lilxml.c/.h`, `base64.c/.h`), copied from
+(`indi-saf-cpp/third_party/liblilxml/lilxml.c/.h`, `base64.c/.h`),
+copied from
 `drbitboy/MagAOX`'s **`dev-resurrector`** branch specifically — NOT
 `dev`, whose `lilxml.h` is missing `parseXMLChunk()` entirely (this
 was checked directly and caused a false alarm before being caught).

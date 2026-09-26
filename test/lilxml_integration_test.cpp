@@ -1,22 +1,15 @@
 // lilxml_integration_test.cpp
 //
 // Real end-to-end test against the actual vendored liblilxml source
-// (../indi-saf-cpp/lilxml.c/.h, base64.c/.h) -- not just declarations.
-// Requires linking lilxml.c and base64.c, so unlike
-// saf_local_config_test.cpp this DOES need liblilxml, but since it's
-// now vendored in-tree that's no longer an external dependency to
-// separately provide. Build and run manually:
+// (../indi-saf-cpp/third_party/liblilxml/lilxml.c/.h, base64.c/.h) --
+// not just declarations. Requires linking lilxml.c and base64.c, so
+// unlike saf_local_config_test.cpp this DOES need liblilxml, but
+// since it's vendored in-tree that's no longer an external dependency
+// to separately provide. Wired into indi-saf-cpp/Makefile:
 //
-//   IDIR=../indi-saf-cpp
-//   g++ -std=c++17 -c $IDIR/indi_xml_bridge.cpp -o /tmp/bridge.o
-//   g++ -std=c++17 -c $IDIR/mailbox.cpp -o /tmp/mailbox.o
-//   g++ -std=c++17 -c $IDIR/wire_format.cpp -o /tmp/wire_format.o
-//   gcc -c $IDIR/lilxml.c -o /tmp/lilxml.o
-//   gcc -c $IDIR/base64.c -o /tmp/base64.o
-//   g++ -std=c++17 -I$IDIR lilxml_integration_test.cpp \
-//       /tmp/bridge.o /tmp/mailbox.o /tmp/wire_format.o \
-//       /tmp/lilxml.o /tmp/base64.o -o /tmp/lilxml_integration_test
-//   /tmp/lilxml_integration_test
+//   cd ../indi-saf-cpp && make test-lilxml
+//
+// (or `make test` to run this alongside the other two test files).
 
 
 #include "mailbox.hpp"

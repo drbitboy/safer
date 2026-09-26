@@ -1,14 +1,15 @@
 // mailbox_smoketest.cpp
 //
-// Ad hoc smoke test for indi-saf-cpp/mailbox.hpp's FileMailbox, added
-// while working through the read-then-erase race fix (claim-then-glob
-// via *.ready -> *.sending). Not a full test suite / not wired into
-// any build system yet -- just plain assert()s and a main(), built
-// and run manually:
+// Ad hoc smoke test for mailbox.hpp's FileMailbox, added while
+// working through the read-then-erase race fix (claim-then-glob via
+// *.ready -> *.sending). Not a full test suite -- just plain
+// assert()s and a main(). Now wired into indi-saf-cpp/Makefile:
 //
-//   g++ -std=c++17 -I../indi-saf-cpp mailbox_smoketest.cpp \
-//       ../indi-saf-cpp/mailbox.cpp ../indi-saf-cpp/wire_format.cpp \
-//       -o /tmp/mailbox_smoketest && /tmp/mailbox_smoketest
+//   cd ../indi-saf-cpp && make test-mailbox
+//
+// (or `make test` to run this alongside the other two test files).
+// Can still be built manually if needed -- see the Makefile's
+// test-mailbox target for the exact g++ invocation it runs.
 //
 // Uses a fresh mkdtemp()-style temp directory per run so it's safe to
 // run concurrently / repeatedly without stepping on a previous run's

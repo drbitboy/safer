@@ -3,14 +3,13 @@
 // Ad hoc smoke test for saf_local_config.hpp/.cpp (Config parsing,
 // CLI args, INI files). Deliberately has NO dependency on liblilxml,
 // mailbox.hpp, or indi_xml_bridge.hpp -- unlike saf_local.cpp's
-// runLoop(), this logic is fully self-contained and can be linked and
-// run without a real liblilxml binary, which mailbox_smoketest.cpp's
-// build note doesn't apply to. Not wired into any build system yet --
-// plain assert()s and a main(), built and run manually:
+// runLoop(), this logic is fully self-contained and links without
+// needing the vendored liblilxml source at all. Wired into
+// indi-saf-cpp/Makefile:
 //
-//   g++ -std=c++17 -I../indi-saf-cpp saf_local_config_test.cpp \
-//       ../indi-saf-cpp/saf_local_config.cpp \
-//       -o /tmp/saf_local_config_test && /tmp/saf_local_config_test
+//   cd ../indi-saf-cpp && make test-config
+//
+// (or `make test` to run this alongside the other two test files).
 
 #include "saf_local_config.hpp"
 #include <cassert>
