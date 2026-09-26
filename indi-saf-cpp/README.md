@@ -47,7 +47,9 @@ directly instead of a separate bool.
   the link API out. Outbound (3a) side only.
 - `indiserver_api.hpp` — stubbed `IIndiServerApi` interface with a
   trivial `StubIndiServerApi`, mirroring `ILinkApi`'s pattern, for
-  1b's not-yet-implemented connection to the local `indiserver`.
+  1b's not-yet-implemented connection to the local `indiserver`. Not
+  used by `saf_local.cpp` (see below) — kept as illustration of the
+  separate-thread alternative `example_1b_loop.cpp` demonstrates.
 - `example_3a_loop.cpp` — illustrative outbound drain loop: drains the
   outbound `FileMailbox`, sends each record over `ILinkApi`, erases
   the file on accepted send.
@@ -57,7 +59,94 @@ directly instead of a separate bool.
   the file on success. (Not shown: whatever receives off the link and
   calls `inboundStore.upsert()` on each incoming message — that's the
   receiving counterpart to 3a's `ILinkApi::send` on the far side, and
-  is out of scope for this bridge-logic package.)
+  is out of scope for this bridge-logic package.) Superseded in
+  practice by `saf_local.cpp` for the 1a+1b-combined design (see
+  below) — kept as illustration of running 1b as its own separate
+  thread/process instead, via the `IIndiServerApi` abstraction, if
+  that shape is ever preferred over the combined loop.
+- `saf_local_config.hpp/.cpp` + `saf_local.hpp/.cpp` — a REAL program
+  (not illustrative), running 1a and 1b together as a single
+  select()-paced thread sharing one TCP connection to `indiserver`
+  (per the design discussion: 1a and 1b are both just "the INDI
+  client" talking to the same local server, so there's a real benefit
+  to combining them, not just simplicity). Talks to the socket
+  directly rather than through `IIndiServerApi` — that interface
+  existed to let `example_1b_loop.cpp` be written/tested against a
+  swappable stub before the real connection mechanism was decided;
+  `saf_local.cpp` **is** that real mechanism now, so the abstraction
+  isn't needed here. Loop shape:
+
+      (A)   check inbound mailbox for pending records
+      (A.1) none pending -> (B)
+      (A.2) pending -> recompose + send each over the socket, erase
+            on success; EAGAIN or a hard send error stops draining
+            for this lap rather than busy-looping
+      (B)   select() on indiserver's read fd, with a timeout --
+            this is what paces the loop; no sleep() anywhere
+      (B.1) timeout -> back to (A)
+      (B.2) readable -> recv(), feed the persistent LilXML parser,
+            decompose any complete messages, upsert into the
+            outbound mailbox -> back to (A)
+
+  Deliberately no `select()` on the write side: write-readiness is
+  essentially always true on a healthy connection, so it isn't the
+  real gating condition — whether the inbound mailbox has anything
+  pending is, and that's a plain directory check `FileMailbox`
+  exposes directly, not something `select()` can watch.
+
+  Config split into its own file (`saf_local_config.hpp/.cpp`)
+  specifically so it has zero dependency on `liblilxml`/`mailbox.hpp`/
+  `indi_xml_bridge.hpp` and can be linked and tested without a real
+  `liblilxml` binary — see `test/saf_local_config_test.cpp` (8 cases,
+  all passing: required-field validation, CLI flags, `--help`, bad
+  input, INI file loading, CLI-overrides-config-file regardless of
+  `--config`'s position on the command line, malformed/missing config
+  files). `saf_local.cpp`'s `runLoop()` itself — the actual
+  socket/`select()`/liblilxml-parsing logic — has NOT been
+  runtime-tested; there's no real `liblilxml` binary or a running
+  `indiserver` available to test against in this environment, only
+  the header declarations. It does compile clean against the real
+  `lilxml.h`, same as `indi_xml_bridge.cpp`.
+
+  Command-line / INI parameters:
+
+  | Flag | INI key | Default | Required |
+  |---|---|---|---|
+  | `-i, --inbound-dir` | `inbound_dir` | — | yes |
+  | `-o, --outbound-dir` | `outbound_dir` | — | yes |
+  | `-p, --indiserver-port` | `indiserver_port` | — | yes |
+  | `-H, --indiserver-host` | `indiserver_host` | `127.0.0.1` | no |
+  | `-t, --select-timeout-ms` | `select_timeout_ms` | `250` | no |
+  | `-l, --mailbox-limit` | `mailbox_limit` | `100` | no |
+  | `-r, --reconnect-delay-ms` | `reconnect_delay_ms` | `1000` | no |
+  | `-v, --verbose` | `verbose` | `false` | no |
+  | `-c, --config` | — | — | no |
+
+  `--config`/`-c` loads an INI file as a base layer of settings;
+  any flag actually given on the command line overrides the
+  corresponding INI value, regardless of where `--config` appears
+  among the other flags (tested explicitly — see Test 6).
+
+  Parameters added beyond your original four, worth knowing about:
+  `--indiserver-host` (you asked for a port; a "local" indiserver is
+  still conventionally reached by address too, default `127.0.0.1`),
+  `--mailbox-limit` (bounds how many records `peekPending()` drains
+  per lap — protects against one huge backlog monopolizing the loop
+  and starving `(B)`), `--reconnect-delay-ms` (indiserver connections
+  will drop sometimes; this paces retry attempts rather than
+  busy-reconnecting), and `--verbose` (stderr diagnostic logging,
+  useful for exactly the kind of manual testing this file's own
+  build/run instructions describe). Deliberately NOT added: anything
+  daemonization-related (pidfile, fork-to-background) or TLS/auth for
+  the indiserver connection — out of scope unless indiserver actually
+  needs them.
+
+  `runLoop()` has one flagged `// VERIFY:`: `parseXMLChunk()`'s exact
+  return contract isn't documented in the `lilxml.h` we have (no doc
+  comment on that declaration) — assumed to return a NULL-terminated
+  array of complete top-level `XMLEle*`, caller-owned (must
+  `delXMLEle()` each after use). If MagAO-X's fork differs, `(B.2)`'s
+  handling needs adjusting.
 
 ## `indi_xml_bridge.hpp/.cpp` — liblilxml API status
 
@@ -93,15 +182,15 @@ takes only a `MailboxElement` (no separate bool) and derives the
 
 ## Not yet implemented
 
-- 1a's and 1b's outer loops beyond what `example_3a_loop.cpp`/
-  `example_1b_loop.cpp` illustrate: actually connecting to the local
-  `indiserver` and reading its XML stream (1a), and actually
-  connecting to the local `indiserver`'s socket/FIFO to write (1b, via
-  a real `IIndiServerApi` implementation).
 - Whatever receives incoming wire messages off the link and calls
   `inboundStore.upsert()` on them (the receiving counterpart to 3a's
-  `ILinkApi::send`).
-- Real `ILinkApi` and `IIndiServerApi` implementations (both
-  explicitly stubbed — link API and indiserver connection mechanism
-  both still TBD).
+  `ILinkApi::send`) — 3a/the link side is still stubbed
+  (`link_api.hpp`'s `StubLinkApi`); `saf_local.cpp` only covers 1a/1b
+  (the indiserver-facing side).
+- A real `ILinkApi` implementation (link transport mechanism still
+  TBD).
+- Runtime testing of `saf_local.cpp`'s `runLoop()` — no real
+  `liblilxml` binary or running `indiserver` available in this
+  environment to test the socket/`select()`/parsing logic against;
+  compiles clean, not runtime-verified.
 - Anything BLOB-related (explicitly out of scope per the design doc).
