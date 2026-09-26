@@ -101,12 +101,11 @@ directly instead of a separate bool.
   all passing: required-field validation, CLI flags, `--help`, bad
   input, INI file loading, CLI-overrides-config-file regardless of
   `--config`'s position on the command line, malformed/missing config
-  files). `saf_local.cpp`'s `runLoop()` itself — the actual
-  socket/`select()`/liblilxml-parsing logic — has NOT been
-  runtime-tested; there's no real `liblilxml` binary or a running
-  `indiserver` available to test against in this environment, only
-  the header declarations. It does compile clean against the real
-  `lilxml.h`, same as `indi_xml_bridge.cpp`.
+  files). `saf_local.cpp`'s `runLoop()` itself has its liblilxml
+  parsing layer verified for real now too (see "Vendored
+  liblilxml/base64 source" below) — what's specifically NOT
+  runtime-tested is the socket/`select()` plumbing, since there's no
+  running `indiserver` available to connect to in this environment.
 
   Command-line / INI parameters:
 
@@ -141,12 +140,48 @@ directly instead of a separate bool.
   the indiserver connection — out of scope unless indiserver actually
   needs them.
 
-  `runLoop()` has one flagged `// VERIFY:`: `parseXMLChunk()`'s exact
-  return contract isn't documented in the `lilxml.h` we have (no doc
-  comment on that declaration) — assumed to return a NULL-terminated
-  array of complete top-level `XMLEle*`, caller-owned (must
-  `delXMLEle()` each after use). If MagAO-X's fork differs, `(B.2)`'s
-  handling needs adjusting.
+  `runLoop()`'s previously-flagged `// VERIFY:` on `parseXMLChunk()`
+  is now **confirmed correct**, not just assumed — see "Vendored
+  liblilxml/base64 source" below.
+
+## Vendored liblilxml/base64 source
+
+`lilxml.c`/`.h` and `base64.c`/`.h` are copied directly from
+`drbitboy/MagAOX`, branch `dev-resurrector`, `INDI/liblilxml/` — the
+actual authoritative source this bridge targets, not just a header
+someone pasted in. (Note: `dev-resurrector` specifically, not `dev` —
+`dev`'s version of `lilxml.h` is missing `parseXMLChunk()` entirely,
+which `saf_local.cpp` depends on; that turned out to matter.) Licenses
+(as stated in each file's own header comment): `lilxml.c`/`.h` are
+LGPL v2.1+; `base64.c` is GPL v2+ (no license header on `base64.h`
+itself). Worth keeping in mind if `safer`'s own licensing needs to
+account for that difference.
+
+This `lilxml.h` is byte-for-byte identical to the one Brian uploaded
+earlier in this project (the one `indi_xml_bridge.cpp` and
+`saf_local.cpp` were checked against) — confirmed by `diff`. So the
+API surface used throughout this bridge was already correct; what's
+new here is that `lilxml.c`/`base64.c` (the actual implementations,
+not just declarations) are now available to compile and link against,
+which let the previously-`// VERIFY:`-tagged `parseXMLChunk()` usage
+actually be exercised for real rather than left as an assumption.
+
+`test/lilxml_integration_test.cpp` does this: builds a real `LilXML*`
+context, feeds it actual XML text through `parseXMLChunk()`, and
+confirms `decomposeVector()` correctly extracts the data. Three cases,
+all passing:
+
+1. A complete message in one chunk — one element back, values correct.
+2. **The scenario this whole VERIFY flag was actually about**: the
+   same message split across two separate `parseXMLChunk()` calls at
+   an arbitrary mid-message byte. The first call returns zero complete
+   elements (correctly incomplete); the second, fed the remainder,
+   returns the fully-reassembled element — confirming the `LilXML*`
+   context genuinely carries partial-parse state across calls the way
+   `saf_local.cpp`'s `(B.2)` step depends on.
+3. `recomposeVectorXml()`'s hand-written XML output round-trips back
+   through the real parser correctly (confirms it produces genuinely
+   valid, parseable INDI XML, not just plausible-looking text).
 
 ## `indi_xml_bridge.hpp/.cpp` — liblilxml API status
 
@@ -177,8 +212,13 @@ takes only a `MailboxElement` (no separate bool) and derives the
 - C++17 (uses `std::optional`, `std::filesystem`) — the only
   dependency for `mailbox.cpp`/`wire_format.cpp` now that SQLite has
   been removed on this branch.
-- MagAO-X's `liblilxml` fork (and whatever it depends on) — only for
-  `indi_xml_bridge.cpp`'s `decomposeVector()`; API confirmed, see above.
+- `liblilxml` — now vendored in-tree (`lilxml.c`/`.h`, `base64.c`/`.h`
+  — see "Vendored liblilxml/base64 source" above), so this is no
+  longer an external dependency to separately provide. Compile/link
+  `lilxml.c` and `base64.c` (which `lilxml.c` needs) alongside
+  `indi_xml_bridge.cpp`/`saf_local.cpp` — see
+  `test/lilxml_integration_test.cpp`'s build command for the exact
+  invocation.
 
 ## Not yet implemented
 
@@ -189,8 +229,11 @@ takes only a `MailboxElement` (no separate bool) and derives the
   (the indiserver-facing side).
 - A real `ILinkApi` implementation (link transport mechanism still
   TBD).
-- Runtime testing of `saf_local.cpp`'s `runLoop()` — no real
-  `liblilxml` binary or running `indiserver` available in this
-  environment to test the socket/`select()`/parsing logic against;
-  compiles clean, not runtime-verified.
+- Runtime testing of `saf_local.cpp`'s `runLoop()` end-to-end —
+  `test/lilxml_integration_test.cpp` now verifies the parsing layer
+  for real (`parseXMLChunk()`, split-message reassembly,
+  `recomposeVectorXml()` round-tripping), since `liblilxml` is
+  vendored in-tree now. What's still unverified is specifically the
+  socket/`select()` plumbing itself — no running `indiserver` is
+  available in this environment to actually connect to.
 - Anything BLOB-related (explicitly out of scope per the design doc).

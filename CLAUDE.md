@@ -64,6 +64,20 @@ This resolves the previously-open question of whether MagAO-X's fork
 differs from upstream liblilxml — the fork itself was the source, so
 the API surface used here is fully confirmed.
 
+`liblilxml`/`base64` are now vendored in-tree
+(`indi-saf-cpp/lilxml.c/.h`, `base64.c/.h`), copied from
+`drbitboy/MagAOX`'s **`dev-resurrector`** branch specifically — NOT
+`dev`, whose `lilxml.h` is missing `parseXMLChunk()` entirely (this
+was checked directly and caused a false alarm before being caught).
+The vendored `lilxml.h` is byte-identical to the one Brian uploaded
+earlier. Having the real `.c` source (not just headers) let
+`saf_local.cpp`'s previously-`// VERIFY:`-tagged `parseXMLChunk()`
+usage be linked and genuinely exercised — see
+`test/lilxml_integration_test.cpp`, which confirms (among other
+things) that a message split across two separate `parseXMLChunk()`
+calls reassembles correctly via the `LilXML*` context, the exact
+scenario that flag was about.
+
 ## Conventions
 
 - This is spacecraft operations tooling — precision matters more than
