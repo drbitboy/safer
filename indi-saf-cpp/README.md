@@ -149,19 +149,27 @@ in `build/` (gitignored).
   runtime-tested is the socket/`select()` plumbing, since there's no
   running `indiserver` available to connect to in this environment.
 
-  Command-line / INI parameters:
+  Command-line / INI parameters (all optional now — see below):
 
-  | Flag | INI key | Default | Required |
-  |---|---|---|---|
-  | `-i, --inbound-dir` | `inbound_dir` | — | yes |
-  | `-o, --outbound-dir` | `outbound_dir` | — | yes |
-  | `-p, --indiserver-port` | `indiserver_port` | — | yes |
-  | `-H, --indiserver-host` | `indiserver_host` | `127.0.0.1` | no |
-  | `-t, --select-timeout-ms` | `select_timeout_ms` | `250` | no |
-  | `-l, --mailbox-limit` | `mailbox_limit` | `100` | no |
-  | `-r, --reconnect-delay-ms` | `reconnect_delay_ms` | `1000` | no |
-  | `-v, --verbose` | `verbose` | `false` | no |
-  | `-c, --config` | — | — | no |
+  | Flag | INI key | Default |
+  |---|---|---|
+  | `-i, --inbound-dir` | `inbound_dir` | `./inbound` |
+  | `-o, --outbound-dir` | `outbound_dir` | `./outbound` |
+  | `-p, --indiserver-port` | `indiserver_port` | `7624` |
+  | `-H, --indiserver-host` | `indiserver_host` | `127.0.0.1` |
+  | `-t, --select-timeout-ms` | `select_timeout_ms` | `250` |
+  | `-l, --mailbox-limit` | `mailbox_limit` | `100` |
+  | `-r, --reconnect-delay-ms` | `reconnect_delay_ms` | `1000` |
+  | `-v, --verbose` | `verbose` | `false` |
+  | `-c, --config` | — | — |
+
+  `./saf_local` with zero flags now runs immediately against sensible
+  defaults (`./inbound`, `./outbound`, port `7624` on `127.0.0.1`) —
+  confirmed working: it creates both mailbox directories if they don't
+  exist and starts attempting to connect. `validateConfig()` is kept
+  as a safety net rather than removed — it still catches an explicitly
+  emptied field (e.g. an unusual config file setting `inbound_dir=`),
+  even though hitting that case isn't the normal path anymore.
 
   `--config`/`-c` loads an INI file as a base layer of settings;
   any flag actually given on the command line overrides the

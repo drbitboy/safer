@@ -16,11 +16,14 @@
 namespace saf {
 
 struct Config {
-    // Required -- no built-in default. Empty string / 0 means "not
-    // yet set" during parsing.
-    std::string inboundDir;
-    std::string outboundDir;
-    uint16_t indiserverPort = 0;
+    // All fields now have built-in defaults (see below); nothing is
+    // strictly required to run saf_local anymore. validateConfig()
+    // is kept as a safety net in case a future field needs to be
+    // genuinely required, or someone explicitly sets one of these
+    // empty/zero via a config file.
+    std::string inboundDir = "./inbound";
+    std::string outboundDir = "./outbound";
+    uint16_t indiserverPort = 7624; // INDI's conventional default port
 
     // Optional, with defaults.
     std::string indiserverHost = "127.0.0.1"; // "local" indiserver
@@ -71,16 +74,14 @@ struct ParseResult {
 // wins over the config file regardless of argument order. cfg should
 // hold whatever built-in defaults you want for anything neither the
 // config file nor the command line sets.
-//
-// Does NOT validate that required fields (inboundDir, outboundDir,
-// indiserverPort) ended up set -- call validateConfig() after this
-// for that; parseArgs's job is purely "what did the user say," not
-// "is that enough to run."
 ParseResult parseArgs(int argc, char** argv, Config& cfg);
 
 // Checks that inboundDir, outboundDir, and indiserverPort are all
-// set (non-empty / non-zero). Returns true if so; otherwise returns
-// false and fills errOut naming what's missing.
+// set (non-empty / non-zero). All three now have built-in defaults
+// (see Config above), so this only fails if something explicitly set
+// one of them to empty/0 (e.g. an unusual config file) -- not a
+// normal case, but still checked rather than silently passing an
+// empty directory or port 0 through to runLoop().
 bool validateConfig(const Config& cfg, std::string& errOut);
 
 // Prints usage/help text to the given stream.

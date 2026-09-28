@@ -32,16 +32,29 @@ struct Args {
 };
 
 int main() {
-    // --- Test 1: required-field validation ---
+    // --- Test 1: defaults apply and pass validation with no args at all ---
     {
         Config cfg;
+        assert(cfg.inboundDir == "./inbound");
+        assert(cfg.outboundDir == "./outbound");
+        assert(cfg.indiserverPort == 7624);
+        std::string err;
+        bool ok = validateConfig(cfg, err);
+        assert(ok);
+        std::printf("Test 1 (defaults apply, pass validation with no args): PASS\n");
+    }
+
+    // --- Test 1b: validateConfig still catches an explicitly-emptied
+    //     field (e.g. from an unusual config file), even though the
+    //     required-ness is no longer the normal case ---
+    {
+        Config cfg;
+        cfg.inboundDir = ""; // simulate something explicitly clearing it
         std::string err;
         bool ok = validateConfig(cfg, err);
         assert(!ok);
         assert(err.find("inbound-dir") != std::string::npos);
-        assert(err.find("outbound-dir") != std::string::npos);
-        assert(err.find("indiserver-port") != std::string::npos);
-        std::printf("Test 1 (missing-field validation): PASS\n");
+        std::printf("Test 1b (validateConfig still catches an explicitly-emptied field): PASS\n");
     }
 
     // --- Test 2: plain CLI flags set everything ---
