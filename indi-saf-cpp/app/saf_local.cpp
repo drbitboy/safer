@@ -124,6 +124,41 @@ void interruptibleSleepMs(int ms) {
     }
 }
 
+// Sent once after each successful connect() to make indiserver stream
+// all properties to us. INDI v1.7 specifies the version attribute on
+// getProperties as required; it is included here for that reason
+// (verify against your indiserver if you want the bare "<getProperties/>").
+const char* const kGetPropertiesMsg = "<getProperties version=\"1.7\"/>";
+
+// Sends the whole string on fd, retrying on EINTR and (for the
+// non-blocking socket) waiting up to ~1 s total for writability on
+// EAGAIN. Returns true if every byte was sent; false on error/timeout
+// with errno set.
+bool sendAllBlocking(int fd, const std::string& s) {
+    size_t total = 0;
+    int waitedMs = 0;
+    while (total < s.size()) {
+        ssize_t n = send(fd, s.data() + total, s.size() - total, MSG_NOSIGNAL);
+        if (n > 0) {
+            total += static_cast<size_t>(n);
+            continue;
+        }
+        if (n < 0 && errno == EINTR) continue;
+        if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+            if (waitedMs >= 1000) { errno = ETIMEDOUT; return false; }
+            fd_set wfds;
+            FD_ZERO(&wfds);
+            FD_SET(fd, &wfds);
+            struct timeval tv = {0, 100000};
+            select(fd + 1, nullptr, &wfds, nullptr, &tv);
+            waitedMs += 100;
+            continue;
+        }
+        return false; // n == 0 (unexpected) or hard error
+    }
+    return true;
+}
+
 // Given a vector-message tag like "setNumberVector", splits it into
 // msgType ("set") and vecType ("Number"). Returns false for anything
 // that isn't a recognized def/set/new + Text/Number/Switch/Light
@@ -192,6 +227,20 @@ int runLoop(const Config& cfg) {
                           // during the sleep -- checked at top of loop)
             }
             logv(cfg, "connected");
+
+            // Ask indiserver to start sending us def*/set* updates for
+            // all devices/properties. Sent once per successful connect
+            // (so again after every reconnect). The socket was just
+            // created, so this ~30-byte message fits in the send
+            // buffer; a short write or error is treated as a dead
+            // connection and triggers a reconnect.
+            if (!sendAllBlocking(fd, kGetPropertiesMsg)) {
+                logErr("send(getProperties) failed: " +
+                        std::string(std::strerror(errno)));
+                interruptibleSleepMs(cfg.reconnectDelayMs);
+                continue; // needReconnect is still true
+            }
+            logv(cfg, std::string("sent ") + kGetPropertiesMsg);
             needReconnect = false;
         }
 
