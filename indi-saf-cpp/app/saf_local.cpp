@@ -11,6 +11,7 @@ extern "C" {
 #include <cerrno>
 #include <csignal>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <fcntl.h>
 #include <netdb.h>
@@ -340,7 +341,16 @@ int runLoop(const Config& cfg) {
         char buf[4096];
         ssize_t n = recv(fd, buf, sizeof(buf), 0);
         if (n > 0) {
-            XMLEle** roots = parseXMLChunk(lp, buf, static_cast<int>(n), nullptr); // VERIFY
+            // parseXMLChunk unconditionally writes to errmsg (it does
+            // errmsg[0] = '\0' on entry), so it must not be NULL.
+            char errmsg[1024];
+            XMLEle** roots = parseXMLChunk(lp, buf, static_cast<int>(n), errmsg);
+            if (errmsg[0] != '\0') {
+                // Parse error somewhere in this chunk; the parser has
+                // reset itself and any complete elements are still
+                // returned in roots, so keep going.
+                logErr(std::string("XML parse error: ") + errmsg);
+            }
             if (roots != nullptr) {
                 for (int i = 0; roots[i] != nullptr; ++i) { // VERIFY: NULL-terminated
                     XMLEle* root = roots[i];
@@ -356,8 +366,9 @@ int runLoop(const Config& cfg) {
                     } else {
                         logv(cfg, "skipped non-vector or unhandled message: " + tag);
                     }
-                    delXMLEle(root); // VERIFY: caller-owns assumption, see note above
+                    delXMLEle(root); // caller owns each element (confirmed in lilxml.c)
                 }
+                free(roots); // ...and the malloc'd array itself
             }
         } else if (n == 0) {
             logv(cfg, "indiserver closed the connection");
