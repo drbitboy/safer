@@ -256,7 +256,7 @@ int runLoop(const Config& cfg) {
             if (writeBlocked) break; // stop draining this lap once we
                                       // hit EAGAIN; remaining files
                                       // are retried next lap (still
-                                      // .sending, per mailbox.hpp)
+                                      // sending.*, per mailbox.hpp)
 
             std::string xml;
             try {
@@ -285,7 +285,7 @@ int runLoop(const Config& cfg) {
                     // MailboxElement records are small, treat a
                     // partial send as "not sent" rather than trying
                     // to resume mid-message next lap (simpler, and
-                    // the file is still .sending either way so
+                    // the file is still sending.* either way so
                     // nothing is lost).
                     writeBlocked = true;
                     sendFailed = true;

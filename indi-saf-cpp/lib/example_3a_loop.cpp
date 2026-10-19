@@ -5,7 +5,7 @@
 // handling, no real scheduling of contact windows, no logging).
 //
 // noSQL branch: FileMailbox is now file-backed (see
-// mailbox.hpp). peekPending() globs `*.ready` files and
+// mailbox.hpp). peekPending() globs `ready.*` files and
 // returns each as a PendingRecord (parsed MailboxElement + the
 // filepath it came from); this loop deletes that exact file via
 // erase(filepath) once the link has accepted the send, same as the

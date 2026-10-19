@@ -54,7 +54,7 @@ in `build/` (gitignored).
 
 - `include/mailbox.hpp` + `lib/mailbox.cpp` — file-backed mailbox, one
   instance per direction (an outbound instance and a separate inbound
-  instance). One `.init`→`.ready` file per `(msg_type, device,
+  instance). One `init.`→`ready.` file per `(msg_type, device,
   property, element)` key in that instance's directory; same-key
   writes overwrite the pending file in place for latest-value-wins,
   exactly mirroring what SQLite's `ON CONFLICT DO UPDATE` gave the
@@ -65,13 +65,13 @@ in `build/` (gitignored).
   or required — only same-key latest-value-wins matters.
 
   `peekPending()` uses a two-phase claim-then-glob scheme:
-  `*.ready`→`*.sending` (atomic rename, claims ownership) then globs
-  `*.sending` independently. This makes `erase()` race-free against a
-  concurrent `upsert()` — `upsert()` never touches a `*.sending` file
+  `ready.*`→`sending.*` (atomic rename, claims ownership) then globs
+  `sending.*` independently. This makes `erase()` race-free against a
+  concurrent `upsert()` — `upsert()` never touches a `sending.*` file
   — and gives crash recovery for free with no reaper/timeout: a
-  leftover `*.sending` from a reader that died mid-handling is either
-  retried untouched (no newer `*.ready` arrived) or correctly
-  superseded (a newer `*.ready` overwrote it, which is
+  leftover `sending.*` from a reader that died mid-handling is either
+  retried untouched (no newer `ready.*` arrived) or correctly
+  superseded (a newer `ready.*` overwrote it, which is
   latest-value-wins doing its job, not data loss). See
   `../test/mailbox_smoketest.cpp` (`make test-mailbox`) for a runnable
   check of both cases, plus same-key overwrite and the

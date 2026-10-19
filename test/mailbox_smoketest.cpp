@@ -2,7 +2,7 @@
 //
 // Ad hoc smoke test for mailbox.hpp's FileMailbox, added while
 // working through the read-then-erase race fix (claim-then-glob via
-// *.ready -> *.sending). Not a full test suite -- just plain
+// ready.* -> sending.*). Not a full test suite -- just plain
 // assert()s and a main(). Now wired into indi-saf-cpp/Makefile:
 //
 //   cd ../indi-saf-cpp && make test-mailbox
@@ -60,19 +60,19 @@ int main() {
         auto pending = mb.peekPending();
         assert(pending.size() == 1);
         assert(pending[0].el.value == "1.0");
-        // Confirm the claim actually renamed .ready -> .sending.
-        assert(pending[0].filepath.find(".sending") != std::string::npos);
+        // Confirm the claim actually renamed ready.* -> sending.*.
+        assert(pending[0].filepath.find("/sending.") != std::string::npos);
         mb.erase(pending[0].filepath);
         assert(mb.pendingCount() == 0);
         fs::remove_all(dir);
         std::cout << "Test 1 (basic round trip): PASS\n";
     }
 
-    // --- Test 2: case 1 -- leftover .sending, no newer .ready ---
+    // --- Test 2: case 1 -- leftover sending.*, no newer ready.* ---
     // Simulates a reader that crashed after claiming but before erase.
     {
         std::string dir = makeTempDir();
-        std::string leftover = dir + "/set__CCD__EXPOSURE__VALUE.sending";
+        std::string leftover = dir + "/sending.set.CCD.EXPOSURE.VALUE";
         {
             std::ofstream f(leftover);
             f << "set|CCD|EXPOSURE|VALUE|Number|2.0|||||||";
@@ -85,13 +85,13 @@ int main() {
         mb.erase(pending[0].filepath);
         assert(mb.pendingCount() == 0);
         fs::remove_all(dir);
-        std::cout << "Test 2 (leftover .sending, no newer .ready): PASS\n";
+        std::cout << "Test 2 (leftover sending.*, no newer ready.*): PASS\n";
     }
 
-    // --- Test 3: case 2 -- leftover .sending superseded by newer .ready ---
+    // --- Test 3: case 2 -- leftover sending.* superseded by newer ready.* ---
     {
         std::string dir = makeTempDir();
-        std::string leftover = dir + "/set__CCD__EXPOSURE__VALUE.sending";
+        std::string leftover = dir + "/sending.set.CCD.EXPOSURE.VALUE";
         {
             std::ofstream f(leftover);
             f << "set|CCD|EXPOSURE|VALUE|Number|2.0|||||||";
@@ -106,7 +106,7 @@ int main() {
         mb.erase(pending[0].filepath);
         assert(mb.pendingCount() == 0);
         fs::remove_all(dir);
-        std::cout << "Test 3 (leftover .sending superseded by newer .ready): PASS\n";
+        std::cout << "Test 3 (leftover sending.* superseded by newer ready.*): PASS\n";
     }
 
     // --- Test 4: same-key repeated upsert before drain -> only latest survives ---

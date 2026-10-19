@@ -14,17 +14,21 @@
 // One file per (msg_type, device, property, element) — latest write
 // wins by filename collision:
 //
-//   <dir>/<msg_type>__<device>__<property>__<element>.init    (write in progress)
-//   <dir>/<msg_type>__<device>__<property>__<element>.ready   (durable, ready to read)
+//   <dir>/init.<msg_type>.<device>.<property>.<element>    (write in progress)
+//   <dir>/ready.<msg_type>.<device>.<property>.<element>   (durable, ready to read)
+//   <dir>/sending.<msg_type>.<device>.<property>.<element> (claimed by reader)
+//
+// The state (init / ready / sending) is a filename PREFIX, and '.' is
+// the field separator (fields themselves may not contain '.').
 //
 // where <msg_type> is the INDI message-type prefix the value arrived
 // as ("def" | "set" | "new").
 //
-// Write path (upsert): content is written to the `.init` file, then
-// rename()'d to `.ready`. rename() on the same filesystem is atomic
+// Write path (upsert): content is written to the `init.` file, then
+// rename()'d to `ready.`. rename() on the same filesystem is atomic
 // on POSIX and silently replaces any existing destination file, so:
-//   - a reader globbing for `*.ready` never observes a half-written
-//     file (it only ever sees the old `.ready`, if any, or the
+//   - a reader globbing for `ready.*` never observes a half-written
+//     file (it only ever sees the old `ready.` file, if any, or the
 //     complete new one);
 //   - writing the SAME (msg_type, device, property, element) key
 //     again before it's been consumed overwrites the previous pending
@@ -46,7 +50,7 @@
 // BOTH are applied when drained -- there is no dropped/lost update
 // across distinct keys. Only a same-key repeat drops its predecessor
 // (the whole point of latest-value-wins). Cross-key delivery ORDER is
-// not preserved (readers see `*.ready` files sorted by file mtime,
+// not preserved (readers see `ready.*` files sorted by file mtime,
 // which is a reasonable approximation of write order but not a
 // guarantee) -- confirmed not a concern for this bridge.
 //
@@ -54,36 +58,36 @@
 // that makes erase() race-free without any locking or timeout/reaper
 // logic. Each call:
 //
-//   1. Claim: renames every current `*.ready` to `*.sending`. rename()
+//   1. Claim: renames every current `ready.*` to `sending.*`. rename()
 //      is atomic, so this is a safe "take ownership" step -- once a
-//      file is `*.sending`, upsert() will never touch it again
-//      (upsert() only ever creates `*.init`/`*.ready`). If a
-//      `*.sending` already exists for that key -- a leftover from a
+//      file is `sending.*`, upsert() will never touch it again
+//      (upsert() only ever creates `init.*`/`ready.*`). If a
+//      `sending.*` already exists for that key -- a leftover from a
 //      previous run that crashed before erase() ran -- the rename
 //      silently overwrites it, which is correct: the leftover was
 //      stale, superseded by this newer value, so discarding it is
 //      latest-value-wins doing its job, not data loss.
-//   2. Glob: lists `*.sending` (independently of what step 1 just
+//   2. Glob: lists `sending.*` (independently of what step 1 just
 //      claimed), oldest-by-mtime first, reads+parses up to `limit`
 //      into MailboxElement, returns each as a PendingRecord.
 //
 // The caller deletes the returned filepath directly via erase() once
 // the record has been fully handled (sent to the link, for outbound;
 // recomposed and sent to the local indiserver, for inbound). Because
-// erase() only ever operates on a `*.sending` path -- which nothing
+// erase() only ever operates on a `sending.*` path -- which nothing
 // but this class's own claim step ever creates -- there is no
 // read-then-delete race with a concurrent upsert() the way there
-// would be if erase() deleted a `*.ready` path directly (an earlier,
+// would be if erase() deleted a `ready.*` path directly (an earlier,
 // pre-claim design on this branch had exactly that race: a writer's
 // upsert() landing between a read and the matching erase() would get
 // silently deleted before ever being sent).
 //
 // Crash recovery falls out of this for free, no reaper needed: a
-// `*.sending` file left behind by a reader that died mid-handling is
+// `sending.*` file left behind by a reader that died mid-handling is
 // picked up again by the very next peekPending() call, in one of two
-// ways -- either no newer `*.ready` exists for that key, and step 2
-// finds the leftover `*.sending` untouched and retries it; or a
-// legitimately newer `*.ready` DOES exist, and step 1 overwrites the
+// ways -- either no newer `ready.*` exists for that key, and step 2
+// finds the leftover `sending.*` untouched and retries it; or a
+// legitimately newer `ready.*` DOES exist, and step 1 overwrites the
 // leftover with it, which (per the paragraph above) is correct
 // behavior, not a bug. See example_3a_loop.cpp (outbound) and
 // example_1b_loop.cpp (inbound) for how callers use this.
@@ -132,8 +136,8 @@ public:
     FileMailbox& operator=(const FileMailbox&) = delete;
 
     // Latest-value-wins write for this exact (msg_type, device,
-    // property, element) key: writes to `<key>.init`, then renames to
-    // `<key>.ready`, overwriting any previous pending file for the
+    // property, element) key: writes to `init.<key>`, then renames to
+    // `ready.<key>`, overwriting any previous pending file for the
     // same key. Throws std::runtime_error if any of msg_type, device,
     // property, element contains '/', '.', or a null byte (would
     // corrupt the filename) -- see wire_format::checkSafe, which also
@@ -141,29 +145,29 @@ public:
     void upsert(const MailboxElement& el);
 
     // Two-phase claim-then-glob: first renames every current
-    // `*.ready` to `*.sending` (atomic; silently supersedes any
-    // leftover `*.sending` for the same key from a prior crash), then
-    // globs `*.sending`, sorted oldest-first by file modification
+    // `ready.*` to `sending.*` (atomic; silently supersedes any
+    // leftover `sending.*` for the same key from a prior crash), then
+    // globs `sending.*`, sorted oldest-first by file modification
     // time, and returns up to `limit` of them parsed into
     // MailboxElement. Does NOT delete anything -- the caller is
     // responsible for calling erase() per file once the record has
     // been fully handled. See the class comment above for why this
-    // two-phase scheme (rather than reading `*.ready` directly) is
+    // two-phase scheme (rather than reading `ready.*` directly) is
     // what makes erase() race-free.
     std::vector<PendingRecord> peekPending(int limit = 100);
 
     // Deletes one pending file by the exact path returned from
-    // peekPending() (always a `*.sending` path). Safe to call on a
+    // peekPending() (always a `sending.*` path). Safe to call on a
     // path that no longer exists (e.g. concurrently removed) -- this
     // is a no-op in that case, not an error, since the desired end
     // state (file gone) already holds. Safe with respect to a
     // concurrent upsert() too: upsert() never creates or touches a
-    // `*.sending` file, only `*.init`/`*.ready`, so there is no
+    // `sending.*` file, only `init.*`/`ready.*`, so there is no
     // read-then-delete race on the path this deletes.
     void erase(const std::string& filepath);
 
     // Convenience: how many pending records currently exist, counting
-    // both `*.ready` (not yet claimed) and `*.sending` (claimed,
+    // both `ready.*` (not yet claimed) and `sending.*` (claimed,
     // in-flight or awaiting retry). Useful for logging/telemetry on
     // link-up/link-down transitions.
     long long pendingCount();

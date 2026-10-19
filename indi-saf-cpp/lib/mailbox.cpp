@@ -13,17 +13,23 @@ namespace saf {
 namespace {
 namespace fs = std::filesystem;
 
-bool hasSuffix(const std::string& s, const std::string& suffix) {
-    return s.size() >= suffix.size() &&
-           s.compare(s.size() - suffix.size(), suffix.size(), suffix) == 0;
+// Filenames are "<state>.<msg_type>.<device>.<property>.<element>"
+// where <state> is one of init / ready / sending (a PREFIX, not a
+// suffix). Fields never contain '.', so the separator is unambiguous.
+const std::string kInit    = "init.";
+const std::string kReady   = "ready.";
+const std::string kSending = "sending.";
+
+bool hasPrefix(const std::string& s, const std::string& prefix) {
+    return s.size() >= prefix.size() &&
+           s.compare(0, prefix.size(), prefix) == 0;
 }
 
 // Filename-safety check, separate from wire_format::checkSafe's
 // delimiter check: these four fields become directory-entry names, so
 // '/' (path separator) and '\0' would corrupt or truncate the path.
-// '.' is also rejected here even though the suffix check above is
-// dot-position-independent, just to keep filenames unambiguous to a
-// human glancing at the directory listing.
+// '.' is also rejected here because '.' is the field separator in the
+// filename (and also delimits the leading state prefix).
 void checkFilenameSafe(const std::string& field, const char* fieldName) {
     if (field.find('/') != std::string::npos ||
         field.find('\0') != std::string::npos ||
@@ -39,7 +45,7 @@ std::string keyBasename(const MailboxElement& el) {
     checkFilenameSafe(el.device,   "device");
     checkFilenameSafe(el.property, "property");
     checkFilenameSafe(el.element,  "element");
-    return el.msg_type + "__" + el.device + "__" + el.property + "__" + el.element;
+    return el.msg_type + "." + el.device + "." + el.property + "." + el.element;
 }
 
 void writeFileOrThrow(const fs::path& path, const std::string& content) {
@@ -77,8 +83,8 @@ FileMailbox::FileMailbox(const std::string& directory) : dir_(directory) {
 
 void FileMailbox::upsert(const MailboxElement& el) {
     const std::string base = keyBasename(el);
-    const fs::path initPath  = fs::path(dir_) / (base + ".init");
-    const fs::path readyPath = fs::path(dir_) / (base + ".ready");
+    const fs::path initPath  = fs::path(dir_) / (kInit + base);
+    const fs::path readyPath = fs::path(dir_) / (kReady + base);
 
     // Content is the full record, via the same wire format used on
     // the link -- this file IS effectively what would have been read
@@ -99,9 +105,9 @@ void FileMailbox::upsert(const MailboxElement& el) {
 }
 
 std::vector<PendingRecord> FileMailbox::peekPending(int limit) {
-    // Phase 1: claim. Rename every *.ready to *.sending. This is what
+    // Phase 1: claim. Rename every ready.* to sending.*. This is what
     // makes erase() safe -- see class comment in mailbox.hpp. A
-    // rename() here is atomic and, if a *.sending already exists for
+    // rename() here is atomic and, if a sending.* already exists for
     // the same key (a leftover from a crash before it was erased),
     // silently overwrites it: the leftover was stale and superseded
     // by this newer value, so discarding it is correct latest-value-
@@ -109,11 +115,11 @@ std::vector<PendingRecord> FileMailbox::peekPending(int limit) {
     for (const auto& dirEntry : fs::directory_iterator(dir_)) {
         if (!dirEntry.is_regular_file()) continue;
         const std::string fname = dirEntry.path().filename().string();
-        if (!hasSuffix(fname, ".ready")) continue;
+        if (!hasPrefix(fname, kReady)) continue;
 
         fs::path sendingPath = dirEntry.path();
         sendingPath.replace_filename(
-            fname.substr(0, fname.size() - std::string(".ready").size()) + ".sending");
+            kSending + fname.substr(kReady.size()));
 
         std::error_code ec;
         fs::rename(dirEntry.path(), sendingPath, ec);
@@ -122,10 +128,10 @@ std::vector<PendingRecord> FileMailbox::peekPending(int limit) {
         // otherwise assume) -- just leaves it for a future pass.
     }
 
-    // Phase 2: glob *.sending independently of phase 1 above -- this
-    // picks up BOTH what was just claimed AND any leftover *.sending
+    // Phase 2: glob sending.* independently of phase 1 above -- this
+    // picks up BOTH what was just claimed AND any leftover sending.*
     // file from a previous crash that phase 1 didn't touch (because
-    // no fresh *.ready existed for that key). See mailbox.hpp for the
+    // no fresh ready.* existed for that key). See mailbox.hpp for the
     // two-case argument this relies on.
     struct Entry {
         fs::path path;
@@ -135,7 +141,7 @@ std::vector<PendingRecord> FileMailbox::peekPending(int limit) {
 
     for (const auto& dirEntry : fs::directory_iterator(dir_)) {
         if (!dirEntry.is_regular_file()) continue;
-        if (!hasSuffix(dirEntry.path().filename().string(), ".sending")) continue;
+        if (!hasPrefix(dirEntry.path().filename().string(), kSending)) continue;
         std::error_code ec;
         auto mtime = fs::last_write_time(dirEntry.path(), ec);
         if (ec) continue; // file may have been removed concurrently; skip
@@ -176,11 +182,11 @@ void FileMailbox::erase(const std::string& filepath) {
     std::error_code ec;
     fs::remove(filepath, ec);
     // Safe unconditional delete-by-path: filepath always points at a
-    // *.sending file here (see peekPending()'s phase 1), and nothing
+    // sending.* file here (see peekPending()'s phase 1), and nothing
     // other than peekPending()'s own claim sweep ever creates or
-    // touches a *.sending file. So unlike deleting a *.ready file
+    // touches a sending.* file. So unlike deleting a ready.* file
     // directly, there's no reader/writer race window on this path --
-    // upsert() only ever writes *.init and *.ready, never *.sending.
+    // upsert() only ever writes init.* and ready.*, never sending.*.
     //
     // Not throwing on failure: if the file is already gone (e.g.
     // removed concurrently, or never existed), the desired end state
@@ -194,7 +200,7 @@ long long FileMailbox::pendingCount() {
     for (const auto& dirEntry : fs::directory_iterator(dir_)) {
         if (!dirEntry.is_regular_file()) continue;
         const std::string fname = dirEntry.path().filename().string();
-        if (hasSuffix(fname, ".ready") || hasSuffix(fname, ".sending")) {
+        if (hasPrefix(fname, kReady) || hasPrefix(fname, kSending)) {
             ++count;
         }
     }

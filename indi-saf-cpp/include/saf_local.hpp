@@ -7,7 +7,7 @@
 //     (A)   check the inbound mailbox for pending records
 //     (A.1) none pending -> go to (B)
 //     (A.2) pending -> recompose + send each to indiserver over the
-//           socket, erase each .sending file once fully sent; a
+//           socket, erase each sending.* file once fully sent; a
 //           partial/EAGAIN write on the socket stops draining for
 //           this lap (leaves the rest for next time) rather than
 //           busy-looping on it
