@@ -198,7 +198,7 @@ in `build/` (gitignored).
   through the same logger): `-v` = connection events, `sent ...`,
   `wrote file init.<type>.<dev>.<prop>.<elem>`, `wrote file init.zip`,
   `archived N record(s)...`, skipped messages. `-vv` adds
-  `received <tag> <dev>.<prop> {<elemA>,<elemB>,...}`,
+  `received <tag> <dev>.<prop>.{<elemA>,<elemB>,...}`,
   `renamed "<from>" to "<to>"` and `deleted "<file>"` (filenames only,
   no directory). Errors are always logged.
 

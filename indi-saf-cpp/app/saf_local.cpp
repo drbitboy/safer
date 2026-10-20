@@ -399,7 +399,7 @@ int runLoop(const Config& cfg) {
                             logv2(cfg, "received " + tag + " " +
                                            findXMLAttValu(root, "device") + "." +
                                            findXMLAttValu(root, "name") +
-                                           " {" + names + "}");
+                                           ".{" + names + "}");
                         }
                         for (const auto& el : elements) {
                             outboundMailbox.upsert(el);
