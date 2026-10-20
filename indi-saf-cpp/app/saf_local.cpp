@@ -2,6 +2,7 @@
 #include "saf_local.hpp"
 #include "mailbox.hpp"
 #include "indi_xml_bridge.hpp"
+#include "outbound_archiver.hpp"
 
 extern "C" {
 #include "lilxml.h"
@@ -187,6 +188,18 @@ bool parseVectorTag(const std::string& tag, std::string& msgType, std::string& v
 
 } // namespace
 
+namespace {
+
+// TBD: the real "is the external link up" test doesn't exist yet.
+// Until it does, archiving runs whenever there is something to
+// archive and no archive is already in flight; the separate link
+// sender process (which only transfers <link-dir>/sending.zip) is what
+// actually waits for the link. Replace this with the real check, and
+// archiving will then only start while the link is up.
+bool linkIsUp() { return true; }
+
+} // namespace
+
 int runLoop(const Config& cfg) {
     installShutdownHandlers();
 
@@ -202,7 +215,7 @@ int runLoop(const Config& cfg) {
     // call); caller owns the returned elements and must delXMLEle()
     // each one once done with it. If MagAO-X's fork differs (e.g. a
     // separate count rather than NULL-termination, or different
-    // ownership), this loop's (B.2) handling below needs adjusting.
+    // ownership), this loop's (C.2) handling below needs adjusting.
     LilXML* lp = newLilXML();
     if (lp == nullptr) {
         logErr("newLilXML() failed");
@@ -213,7 +226,23 @@ int runLoop(const Config& cfg) {
     bool needReconnect = true;
 
     int exitCode = 0;
+    const std::string linkDir = cfg.linkDirResolved();
+
     while (!g_shutdownRequested) {
+        // --- (A) archive outbound mailbox files for the link sender ---
+        if (linkIsUp()) {
+            ArchiveReport ar = archiveOutbound(cfg.outboundDir, linkDir);
+            if (ar.result == ArchiveResult::Archived) {
+                logv(cfg, "archived " + std::to_string(ar.fileCount) +
+                              " record(s) into " + linkDir + "/sending.zip");
+            } else if (ar.result == ArchiveResult::Error) {
+                logErr("archive failed: " + ar.error);
+            } else if (ar.result == ArchiveResult::Busy && ar.fileCount > 0) {
+                logv(cfg, "removed " + std::to_string(ar.fileCount) +
+                              " orphaned sending.* file(s) already in the archive");
+            }
+        }
+
         if (needReconnect) {
             if (fd >= 0) {
                 close(fd);
@@ -245,12 +274,12 @@ int runLoop(const Config& cfg) {
             needReconnect = false;
         }
 
-        // --- (A) check inbound mailbox for pending records ---
+        // --- (B) check inbound mailbox for pending records ---
         auto pending = inboundMailbox.peekPending(cfg.mailboxLimit);
 
-        // (A.1) none pending -> falls through to (B) below (the for
+        // (B.1) none pending -> falls through to (C) below (the for
         // loop over an empty vector is a no-op).
-        // (A.2) pending -> recompose + send each.
+        // (B.2) pending -> recompose + send each.
         bool writeBlocked = false;
         for (const auto& rec : pending) {
             if (writeBlocked) break; // stop draining this lap once we
@@ -310,10 +339,10 @@ int runLoop(const Config& cfg) {
         }
 
         if (needReconnect) {
-            continue; // skip (B) this lap, top of loop will reconnect
+            continue; // skip (C) this lap, top of loop will reconnect
         }
 
-        // --- (B) select() on the indiserver read fd, with timeout ---
+        // --- (C) select() on the indiserver read fd, with timeout ---
         fd_set readfds;
         FD_ZERO(&readfds);
         FD_SET(fd, &readfds);
@@ -333,11 +362,11 @@ int runLoop(const Config& cfg) {
             continue;
         }
         if (rc == 0) {
-            // (B.1) timeout, nothing readable -> back to (A)
+            // (C.1) timeout, nothing readable -> back to (A)
             continue;
         }
 
-        // (B.2) readable
+        // (C.2) readable
         char buf[4096];
         ssize_t n = recv(fd, buf, sizeof(buf), 0);
         if (n > 0) {

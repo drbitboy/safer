@@ -4,24 +4,29 @@
 // worked out in conversation:
 //
 //   loop:
-//     (A)   check the inbound mailbox for pending records
-//     (A.1) none pending -> go to (B)
-//     (A.2) pending -> recompose + send each to indiserver over the
+//     (A)   if the link is up, archive the outbound mailbox's pending
+//           files into <link-dir>/sending.zip for the separate link
+//           sender process (see outbound_archiver.hpp); runs every lap,
+//           independent of the indiserver connection, and is a cheap
+//           no-op while an archive is already in flight
+//     (B)   check the inbound mailbox for pending records
+//     (B.1) none pending -> go to (C)
+//     (B.2) pending -> recompose + send each to indiserver over the
 //           socket, erase each sending.* file once fully sent; a
 //           partial/EAGAIN write on the socket stops draining for
 //           this lap (leaves the rest for next time) rather than
 //           busy-looping on it
-//     (B)   select() on the indiserver socket's read fd, with a
+//     (C)   select() on the indiserver socket's read fd, with a
 //           timeout -- this is what paces the loop; there's no sleep()
-//     (B.1) timeout, nothing readable -> go to (A)
-//     (B.2) readable -> recv(), feed bytes into the persistent LilXML
+//     (C.1) timeout, nothing readable -> go to (A)
+//     (C.2) readable -> recv(), feed bytes into the persistent LilXML
 //           parser, decompose any complete vector messages that
 //           result, upsert each into the outbound mailbox -> go to (A)
 //
 // No select() on the write side: write-readiness is essentially always
 // true and isn't the actual gating condition -- whether the inbound
 // mailbox has anything pending is what matters, and that's a plain
-// directory check in (A), not something select() can watch directly
+// directory check in (B), not something select() can watch directly
 // (FileMailbox is files, not a fd-bearing object).
 //
 // 1a and 1b share ONE TCP connection to indiserver, since they're

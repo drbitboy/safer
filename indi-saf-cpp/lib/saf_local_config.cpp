@@ -82,6 +82,8 @@ bool loadIniConfig(const std::string& path, Config& cfg, std::string& errOut) {
             cfg.inboundDir = value;
         } else if (key == "outbound_dir") {
             cfg.outboundDir = value;
+        } else if (key == "link_dir") {
+            cfg.linkDir = value;
         } else if (key == "indiserver_host") {
             cfg.indiserverHost = value;
         } else if (key == "indiserver_port") {
@@ -116,6 +118,8 @@ void printUsage(const char* argv0, FILE* out) {
         "Options (all optional -- defaults shown):\n"
         "  -i, --inbound-dir DIR       default: ./inbound\n"
         "  -o, --outbound-dir DIR      default: ./outbound\n"
+        "  -L, --link-dir DIR          zip archives for the link sender;\n"
+        "                                default: <outbound-dir>/link\n"
         "  -p, --indiserver-port PORT  default: 7624\n"
         "  -H, --indiserver-host HOST  default: 127.0.0.1\n"
         "  -t, --select-timeout-ms MS  default: 250\n"
@@ -135,6 +139,7 @@ namespace {
 const struct option kLongOpts[] = {
     {"inbound-dir",        required_argument, nullptr, 'i'},
     {"outbound-dir",       required_argument, nullptr, 'o'},
+    {"link-dir",           required_argument, nullptr, 'L'},
     {"indiserver-port",    required_argument, nullptr, 'p'},
     {"indiserver-host",    required_argument, nullptr, 'H'},
     {"select-timeout-ms",  required_argument, nullptr, 't'},
@@ -145,7 +150,7 @@ const struct option kLongOpts[] = {
     {"help",               no_argument,       nullptr, 'h'},
     {nullptr, 0, nullptr, 0},
 };
-const char* kShortOpts = "i:o:p:H:t:l:r:vc:h";
+const char* kShortOpts = "i:o:L:p:H:t:l:r:vc:h";
 
 } // namespace
 
@@ -189,6 +194,7 @@ ParseResult parseArgs(int argc, char** argv, Config& cfg) {
         switch (c) {
             case 'i': cfg.inboundDir = optarg; break;
             case 'o': cfg.outboundDir = optarg; break;
+            case 'L': cfg.linkDir = optarg; break;
             case 'H': cfg.indiserverHost = optarg; break;
             case 'p': {
                 std::string errOut;

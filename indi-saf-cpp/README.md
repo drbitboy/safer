@@ -117,15 +117,18 @@ in `build/` (gitignored).
   **is** that real mechanism now, so the abstraction isn't needed
   here. Loop shape:
 
-      (A)   check inbound mailbox for pending records
-      (A.1) none pending -> (B)
-      (A.2) pending -> recompose + send each over the socket, erase
+      (A)   if the link is up, archive pending outbound mailbox files
+            into <link-dir>/sending.zip (see below); every lap,
+            whether or not indiserver is connected
+      (B)   check inbound mailbox for pending records
+      (B.1) none pending -> (C)
+      (B.2) pending -> recompose + send each over the socket, erase
             on success; EAGAIN or a hard send error stops draining
             for this lap rather than busy-looping
-      (B)   select() on indiserver's read fd, with a timeout --
+      (C)   select() on indiserver's read fd, with a timeout --
             this is what paces the loop; no sleep() anywhere
-      (B.1) timeout -> back to (A)
-      (B.2) readable -> recv(), feed the persistent LilXML parser,
+      (C.1) timeout -> back to (A)
+      (C.2) readable -> recv(), feed the persistent LilXML parser,
             decompose any complete messages, upsert into the
             outbound mailbox -> back to (A)
 
@@ -134,6 +137,26 @@ in `build/` (gitignored).
   real gating condition — whether the inbound mailbox has anything
   pending is, and that's a plain directory check `FileMailbox`
   exposes directly, not something `select()` can watch.
+
+  **Outbound archiving, step (A)** (`outbound_archiver.hpp/.cpp`,
+  `make test-archiver`): bundles the outbound mailbox's pending
+  `ready.<type>.<dev>.<prop>.<elem>` files into one zip for a separate
+  link-sender process. Archives live in `<outbound-dir>/link/`
+  (`--link-dir`), never in the mailbox directory itself. Per call:
+  if `link/sending.zip` exists, an archive is already in flight, so do
+  nothing except delete orphaned `sending.<...>` files (already inside
+  it) and leave `ready.<...>` files alone to keep collapsing
+  latest-value-wins; otherwise rename `ready.<...>` → `sending.<...>`,
+  write `link/init.zip` (entries named `init.<type>.<dev>.<prop>.<elem>`,
+  fsync'd), atomically rename it to `link/sending.zip`, then delete the
+  `sending.<...>` sources. The link sender only ever transfers
+  `sending.zip` and deletes it once the far end acknowledges. Only
+  filenames with exactly five dot-separated fields count as records,
+  so stray files (e.g. a `ready.zip`) are ignored. `linkIsUp()` in
+  `saf_local.cpp` is a TBD stub returning true. Uses vendored
+  `third_party/miniz/` (`miniz.c` + `miniz.h`, MIT, v3.0.2).
+  Caveat: the generic `FileMailbox` still claims any `ready.*` file in
+  its own directory, so don't put non-record files there.
 
   Config split into its own file (`saf_local_config.hpp/.cpp`)
   specifically so it has zero dependency on `liblilxml`/`mailbox.hpp`/
@@ -181,7 +204,7 @@ in `build/` (gitignored).
   still conventionally reached by address too, default `127.0.0.1`),
   `--mailbox-limit` (bounds how many records `peekPending()` drains
   per lap — protects against one huge backlog monopolizing the loop
-  and starving `(B)`), `--reconnect-delay-ms` (indiserver connections
+  and starving `(C)`), `--reconnect-delay-ms` (indiserver connections
   will drop sometimes; this paces retry attempts rather than
   busy-reconnecting), and `--verbose` (stderr diagnostic logging,
   useful for exactly the kind of manual testing described above).
@@ -231,7 +254,7 @@ the data. Three cases, all passing:
    elements (correctly incomplete); the second, fed the remainder,
    returns the fully-reassembled element — confirming the `LilXML*`
    context genuinely carries partial-parse state across calls the way
-   `saf_local.cpp`'s `(B.2)` step depends on.
+   `saf_local.cpp`'s `(C.2)` step depends on.
 3. `recomposeVectorXml()`'s hand-written XML output round-trips back
    through the real parser correctly (confirms it produces genuinely
    valid, parseable INDI XML, not just plausible-looking text).

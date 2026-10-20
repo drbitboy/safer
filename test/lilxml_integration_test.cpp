@@ -58,7 +58,7 @@ int main() {
     }
 
     // --- Test 2: the message split across TWO separate chunks ---
-    // (This is the actual scenario runLoop()'s (B.2) needs to handle
+    // (This is the actual scenario runLoop()'s (C.2) needs to handle
     // correctly when recv() returns a partial message.)
     {
         LilXML* lp = newLilXML();

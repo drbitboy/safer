@@ -163,6 +163,22 @@ int main() {
         std::printf("Test 8 (missing config file): PASS\n");
     }
 
+    // --- Test 9: link-dir default derives from outbound-dir; -L overrides ---
+    {
+        Config cfg;
+        assert(cfg.linkDirResolved() == "./outbound/link");
+        Args args({"saf_local", "-o", "/x/out"});
+        ParseResult pr = parseArgs(args.argc(), args.data(), cfg);
+        assert(pr.ok);
+        assert(cfg.linkDirResolved() == "/x/out/link");
+        Config cfg2;
+        Args args2({"saf_local", "-o", "/x/out", "--link-dir", "/y/link"});
+        pr = parseArgs(args2.argc(), args2.data(), cfg2);
+        assert(pr.ok);
+        assert(cfg2.linkDirResolved() == "/y/link");
+        std::printf("Test 9 (link-dir default and override): PASS\n");
+    }
+
     std::printf("All tests passed.\n");
     return 0;
 }

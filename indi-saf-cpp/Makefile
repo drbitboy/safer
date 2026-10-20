@@ -22,19 +22,21 @@
 # Usage:
 #   make            build the saf_local binary (default target)
 #   make saf_local  same, explicitly
-#   make test       build and run all three test binaries in ../test/
+#   make test       build and run all four test binaries in ../test/
 #   make clean      remove build/ and the saf_local binary
 
 CXX      := g++
-CXXFLAGS := -std=c++17 -Wall -Wextra -Iinclude -Ithird_party/liblilxml
+CXXFLAGS := -std=c++17 -Wall -Wextra -Iinclude -Ithird_party/liblilxml -Ithird_party/miniz
 
 CC       := gcc
 CFLAGS   := -Wall
+# miniz: large-file macro avoids its "may not support large files" #pragma message
+MINIZ_CFLAGS := -Wall -D_LARGEFILE64_SOURCE
 
 BUILD    := build
 TEST_DIR := ../test
 
-.PHONY: all test test-mailbox test-config test-lilxml clean
+.PHONY: all test test-mailbox test-config test-lilxml test-archiver clean
 
 all: saf_local
 
@@ -54,16 +56,21 @@ $(BUILD)/%.o: app/%.cpp | $(BUILD)
 $(BUILD)/%.o: third_party/liblilxml/%.c | $(BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
 
+# --- vendored miniz (single miniz.c + miniz.h, MIT) ---
+$(BUILD)/%.o: third_party/miniz/%.c | $(BUILD)
+	$(CC) $(MINIZ_CFLAGS) -c $< -o $@
+
 LIB_OBJS    := $(BUILD)/mailbox.o $(BUILD)/wire_format.o \
-               $(BUILD)/indi_xml_bridge.o $(BUILD)/saf_local_config.o
-VENDOR_OBJS := $(BUILD)/lilxml.o $(BUILD)/base64.o
+               $(BUILD)/indi_xml_bridge.o $(BUILD)/saf_local_config.o \
+               $(BUILD)/outbound_archiver.o
+VENDOR_OBJS := $(BUILD)/lilxml.o $(BUILD)/base64.o $(BUILD)/miniz.o
 
 saf_local: $(BUILD)/saf_local.o $(LIB_OBJS) $(VENDOR_OBJS)
 	$(CXX) $(CXXFLAGS) $^ -o $@
 
 # --- tests (each links only the objects it actually needs) ---
 
-test: test-mailbox test-config test-lilxml
+test: test-mailbox test-config test-lilxml test-archiver
 
 test-mailbox: $(BUILD)/mailbox.o $(BUILD)/wire_format.o | $(BUILD)
 	$(CXX) $(CXXFLAGS) $(TEST_DIR)/mailbox_smoketest.cpp \
@@ -84,6 +91,12 @@ test-lilxml: $(BUILD)/indi_xml_bridge.o $(BUILD)/mailbox.o \
 	    $(BUILD)/wire_format.o $(VENDOR_OBJS) \
 	    -o $(BUILD)/lilxml_integration_test
 	$(BUILD)/lilxml_integration_test
+
+test-archiver: $(BUILD)/outbound_archiver.o $(BUILD)/miniz.o | $(BUILD)
+	$(CXX) $(CXXFLAGS) $(TEST_DIR)/outbound_archiver_test.cpp \
+	    $(BUILD)/outbound_archiver.o $(BUILD)/miniz.o \
+	    -o $(BUILD)/outbound_archiver_test
+	$(BUILD)/outbound_archiver_test
 
 clean:
 	rm -rf $(BUILD) saf_local
