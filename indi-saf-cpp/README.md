@@ -183,7 +183,7 @@ in `build/` (gitignored).
   | `-t, --select-timeout-ms` | `select_timeout_ms` | `250` |
   | `-l, --mailbox-limit` | `mailbox_limit` | `100` |
   | `-r, --reconnect-delay-ms` | `reconnect_delay_ms` | `1000` |
-  | `-v, --verbose` | `verbose` | `false` |
+  | `-v, --verbose` (repeatable: `-vv`, `-v -v`) | `verbose` (`0`/`1`/`2`, or `true`/`false`) | `0` |
   | `-c, --config` | — | — |
 
   `./saf_local` with zero flags now runs immediately against sensible
@@ -193,6 +193,14 @@ in `build/` (gitignored).
   as a safety net rather than removed — it still catches an explicitly
   emptied field (e.g. an unusual config file setting `inbound_dir=`),
   even though hitting that case isn't the normal path anymore.
+
+  **Logging levels** (stderr, via `saf_log.hpp`; library code logs
+  through the same logger): `-v` = connection events, `sent ...`,
+  `wrote file init.<type>.<dev>.<prop>.<elem>`, `wrote file init.zip`,
+  `archived N record(s)...`, skipped messages. `-vv` adds
+  `received <tag> <dev>.<prop> -> N element(s): <names>`,
+  `renamed "<from>" to "<to>"` and `deleted "<file>"` (filenames only,
+  no directory). Errors are always logged.
 
   `--config`/`-c` loads an INI file as a base layer of settings;
   any flag actually given on the command line overrides the

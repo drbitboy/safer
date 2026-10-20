@@ -71,7 +71,7 @@ int main() {
         assert(cfg.selectTimeoutMs == 500);
         assert(cfg.mailboxLimit == 50);
         assert(cfg.reconnectDelayMs == 2000);
-        assert(cfg.verbose == true);
+        assert(cfg.verbose == 1);
         std::string err;
         assert(validateConfig(cfg, err));
         std::printf("Test 2 (plain CLI flags): PASS\n");
@@ -121,7 +121,7 @@ int main() {
         assert(cfg.outboundDir == "/cfg/out");     // from config file
         assert(cfg.indiserverPort == 8000);        // from config file
         assert(cfg.selectTimeoutMs == 999);        // CLI override
-        assert(cfg.verbose == true);                // from config file
+        assert(cfg.verbose == 1);                   // from config file (yes)
         std::printf("Test 5 (config file + CLI override): PASS\n");
     }
 
@@ -177,6 +177,30 @@ int main() {
         assert(pr.ok);
         assert(cfg2.linkDirResolved() == "/y/link");
         std::printf("Test 9 (link-dir default and override): PASS\n");
+    }
+
+    // --- Test 10: -vv, -v -v, cap at 2, INI verbose=2 ---
+    {
+        Config a;
+        Args argsA({"saf_local", "-vv"});
+        assert(parseArgs(argsA.argc(), argsA.data(), a).ok && a.verbose == 2);
+        Config b;
+        Args argsB({"saf_local", "-v", "-v"});
+        assert(parseArgs(argsB.argc(), argsB.data(), b).ok && b.verbose == 2);
+        Config c;
+        Args argsC({"saf_local", "-v", "--verbose", "-v"});
+        assert(parseArgs(argsC.argc(), argsC.data(), c).ok && c.verbose == 2);
+        std::string path = "/tmp/saf_local_test_v2.ini";
+        { std::ofstream f(path); f << "verbose=2\n"; }
+        Config d;
+        Args argsD({"saf_local", "--config", path});
+        assert(parseArgs(argsD.argc(), argsD.data(), d).ok && d.verbose == 2);
+        { std::ofstream f(path); f << "verbose=3\n"; }
+        Config e;
+        Args argsE({"saf_local", "--config", path});
+        assert(!parseArgs(argsE.argc(), argsE.data(), e).ok);
+        std::remove(path.c_str());
+        std::printf("Test 10 (-vv, -v -v, cap, INI verbose=2): PASS\n");
     }
 
     std::printf("All tests passed.\n");

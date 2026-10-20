@@ -62,7 +62,7 @@ $(BUILD)/%.o: third_party/miniz/%.c | $(BUILD)
 
 LIB_OBJS    := $(BUILD)/mailbox.o $(BUILD)/wire_format.o \
                $(BUILD)/indi_xml_bridge.o $(BUILD)/saf_local_config.o \
-               $(BUILD)/outbound_archiver.o
+               $(BUILD)/outbound_archiver.o $(BUILD)/saf_log.o
 VENDOR_OBJS := $(BUILD)/lilxml.o $(BUILD)/base64.o $(BUILD)/miniz.o
 
 saf_local: $(BUILD)/saf_local.o $(LIB_OBJS) $(VENDOR_OBJS)
@@ -72,9 +72,9 @@ saf_local: $(BUILD)/saf_local.o $(LIB_OBJS) $(VENDOR_OBJS)
 
 test: test-mailbox test-config test-lilxml test-archiver
 
-test-mailbox: $(BUILD)/mailbox.o $(BUILD)/wire_format.o | $(BUILD)
+test-mailbox: $(BUILD)/mailbox.o $(BUILD)/wire_format.o $(BUILD)/saf_log.o | $(BUILD)
 	$(CXX) $(CXXFLAGS) $(TEST_DIR)/mailbox_smoketest.cpp \
-	    $(BUILD)/mailbox.o $(BUILD)/wire_format.o \
+	    $(BUILD)/mailbox.o $(BUILD)/wire_format.o $(BUILD)/saf_log.o \
 	    -o $(BUILD)/mailbox_smoketest
 	$(BUILD)/mailbox_smoketest
 
@@ -85,16 +85,16 @@ test-config: $(BUILD)/saf_local_config.o | $(BUILD)
 	$(BUILD)/saf_local_config_test
 
 test-lilxml: $(BUILD)/indi_xml_bridge.o $(BUILD)/mailbox.o \
-             $(BUILD)/wire_format.o $(VENDOR_OBJS) | $(BUILD)
+             $(BUILD)/wire_format.o $(BUILD)/saf_log.o $(VENDOR_OBJS) | $(BUILD)
 	$(CXX) $(CXXFLAGS) $(TEST_DIR)/lilxml_integration_test.cpp \
 	    $(BUILD)/indi_xml_bridge.o $(BUILD)/mailbox.o \
-	    $(BUILD)/wire_format.o $(VENDOR_OBJS) \
+	    $(BUILD)/wire_format.o $(BUILD)/saf_log.o $(VENDOR_OBJS) \
 	    -o $(BUILD)/lilxml_integration_test
 	$(BUILD)/lilxml_integration_test
 
-test-archiver: $(BUILD)/outbound_archiver.o $(BUILD)/miniz.o | $(BUILD)
+test-archiver: $(BUILD)/outbound_archiver.o $(BUILD)/miniz.o $(BUILD)/saf_log.o | $(BUILD)
 	$(CXX) $(CXXFLAGS) $(TEST_DIR)/outbound_archiver_test.cpp \
-	    $(BUILD)/outbound_archiver.o $(BUILD)/miniz.o \
+	    $(BUILD)/outbound_archiver.o $(BUILD)/miniz.o $(BUILD)/saf_log.o \
 	    -o $(BUILD)/outbound_archiver_test
 	$(BUILD)/outbound_archiver_test
 

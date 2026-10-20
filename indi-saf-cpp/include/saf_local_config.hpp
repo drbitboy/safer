@@ -43,7 +43,8 @@ struct Config {
                                   // FileMailbox::peekPending()
     int reconnectDelayMs = 1000; // wait between indiserver reconnect
                                   // attempts after a lost connection
-    bool verbose = false;        // diagnostic logging to stderr
+    int verbose = 0;             // log level: 0 off, 1 (-v), 2 (-vv);
+                                  // see saf_log.hpp
 
     // Not exposed as a parameter: SIGINT/SIGTERM handling for clean
     // shutdown is always on (see saf_local.cpp) -- there's no
@@ -62,7 +63,8 @@ struct Config {
 // Returns false (with errOut set) if the file can't be opened, or if
 // a line is neither blank/comment/section nor a valid key=value pair,
 // or if indiserver_port/*_ms/mailbox_limit fail to parse as integers,
-// or if verbose isn't one of true/false/1/0/yes/no (case-insensitive).
+// or if verbose isn't one of true/false/yes/no/on/off (case-insensitive,
+// true=1, false=0) or an integer 0, 1 or 2.
 // An unrecognized key is ignored, not an error (forward-compatible
 // with a config file that has extra keys for a newer version).
 bool loadIniConfig(const std::string& path, Config& cfg, std::string& errOut);

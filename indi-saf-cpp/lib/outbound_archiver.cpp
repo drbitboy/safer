@@ -1,6 +1,7 @@
 // outbound_archiver.cpp -- see outbound_archiver.hpp for the protocol.
 #include "outbound_archiver.hpp"
 #include "miniz.h"
+#include "saf_log.hpp"
 
 #include <algorithm>
 #include <cerrno>
@@ -50,6 +51,23 @@ std::string stripState(const std::string& filename) {
     return filename.substr(filename.find('.') + 1);
 }
 
+// remove() + level-2 "deleted" log when something was actually deleted.
+bool removeLogged(const fs::path& p) {
+    std::error_code ec;
+    bool removed = fs::remove(p, ec);
+    if (removed) logAt(2, "deleted \"" + p.filename().string() + "\"");
+    return removed;
+}
+
+// rename() + level-2 "renamed" log on success.
+void renameLogged(const fs::path& from, const fs::path& to, std::error_code& ec) {
+    fs::rename(from, to, ec);
+    if (!ec) {
+        logAt(2, "renamed \"" + from.filename().string() + "\" to \"" +
+                     to.filename().string() + "\"");
+    }
+}
+
 ArchiveReport fail(const std::string& msg) {
     ArchiveReport r;
     r.result = ArchiveResult::Error;
@@ -79,21 +97,20 @@ ArchiveReport archiveOutbound(const std::string& outboundDir,
         ArchiveReport r;
         r.result = ArchiveResult::Busy;
         for (const auto& orphan : listMailboxFiles(out, kSending)) {
-            std::error_code ec2;
-            if (fs::remove(orphan, ec2)) ++r.fileCount;
+            if (removeLogged(orphan)) ++r.fileCount;
         }
         return r;
     }
 
     // --- Step 1: stale partial archive from a crashed attempt ---
-    fs::remove(initZip, ec); // absent is fine
+    removeLogged(initZip); // absent is fine
 
     // --- Step 2: claim ready.<...> -> sending.<...> ---
     for (const auto& rdy : listMailboxFiles(out, kReady)) {
         fs::path dst = rdy;
         dst.replace_filename(std::string(kSending) + "." + stripState(rdy.filename().string()));
         std::error_code ec2;
-        fs::rename(rdy, dst, ec2);
+        renameLogged(rdy, dst, ec2);
         // On failure leave it for the next cycle.
     }
 
@@ -112,25 +129,27 @@ ArchiveReport archiveOutbound(const std::string& outboundDir,
         if (!mz_zip_writer_add_file(&zip, entry.c_str(), src.c_str(), nullptr, 0,
                                     MZ_DEFAULT_LEVEL)) {
             mz_zip_writer_end(&zip);
-            fs::remove(initZip, ec);
+            removeLogged(initZip);
             return fail("cannot add " + src.string() + " to archive");
         }
     }
     if (!mz_zip_writer_finalize_archive(&zip)) {
         mz_zip_writer_end(&zip);
-        fs::remove(initZip, ec);
+        removeLogged(initZip);
         return fail("cannot finalize " + initZip.string());
     }
     mz_zip_writer_end(&zip);
     if (!fsyncPath(initZip)) {
-        fs::remove(initZip, ec);
+        removeLogged(initZip);
         return fail("fsync " + initZip.string() + ": " + std::strerror(errno));
     }
 
+    logAt(1, "wrote file init.zip");
+
     // --- Step 4: atomic publish ---
-    fs::rename(initZip, sendingZip, ec);
+    renameLogged(initZip, sendingZip, ec);
     if (ec) {
-        fs::remove(initZip, ec);
+        removeLogged(initZip);
         return fail("rename to " + sendingZip.string() + ": " + ec.message());
     }
     fsyncPath(link); // best effort: make the rename itself durable
@@ -139,8 +158,7 @@ ArchiveReport archiveOutbound(const std::string& outboundDir,
     ArchiveReport r;
     r.result = ArchiveResult::Archived;
     for (const auto& src : sources) {
-        std::error_code ec2;
-        if (fs::remove(src, ec2)) ++r.fileCount;
+        if (removeLogged(src)) ++r.fileCount;
     }
     return r;
 }

@@ -51,6 +51,20 @@ bool parseBoolField(const std::string& value, const std::string& key,
     return false;
 }
 
+// Verbosity: true/yes/on = 1, false/no/off = 0, or an integer 0..2.
+bool parseVerboseField(const std::string& value, const std::string& key,
+                        int& out, std::string& errOut) {
+    bool b;
+    std::string ignored;
+    std::string v = value;
+    std::transform(v.begin(), v.end(), v.begin(),
+                    [](unsigned char c) { return std::tolower(c); });
+    if (v == "2") { out = 2; return true; }
+    if (parseBoolField(value, key, b, ignored)) { out = b ? 1 : 0; return true; }
+    errOut = "config: '" + key + "' must be true/false or 0, 1, 2: '" + value + "'";
+    return false;
+}
+
 } // namespace
 
 bool loadIniConfig(const std::string& path, Config& cfg, std::string& errOut) {
@@ -101,7 +115,7 @@ bool loadIniConfig(const std::string& path, Config& cfg, std::string& errOut) {
         } else if (key == "reconnect_delay_ms") {
             if (!parseIntField(value, key, cfg.reconnectDelayMs, errOut)) return false;
         } else if (key == "verbose") {
-            if (!parseBoolField(value, key, cfg.verbose, errOut)) return false;
+            if (!parseVerboseField(value, key, cfg.verbose, errOut)) return false;
         }
         // Unrecognized key: ignored, not an error (see header comment).
     }
@@ -125,7 +139,8 @@ void printUsage(const char* argv0, FILE* out) {
         "  -t, --select-timeout-ms MS  default: 250\n"
         "  -l, --mailbox-limit N       max records drained per lap, default: 100\n"
         "  -r, --reconnect-delay-ms MS default: 1000\n"
-        "  -v, --verbose                diagnostic logging to stderr\n"
+        "  -v, --verbose                diagnostic logging to stderr; give twice\n"
+        "                                (-vv or -v -v) for more detail\n"
         "  -c, --config FILE            INI file providing any of the above;\n"
         "                                loaded first, then any flag actually\n"
         "                                given on the command line overrides it\n"
@@ -235,7 +250,7 @@ ParseResult parseArgs(int argc, char** argv, Config& cfg) {
                 }
                 break;
             }
-            case 'v': cfg.verbose = true; break;
+            case 'v': if (cfg.verbose < 2) ++cfg.verbose; break;
             case 'c': break; // already handled in pass 1
             case 'h':
                 result.ok = false;

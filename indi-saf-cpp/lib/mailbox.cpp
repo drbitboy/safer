@@ -1,6 +1,7 @@
 // mailbox.cpp
 #include "mailbox.hpp"
 #include "wire_format.hpp"
+#include "saf_log.hpp"
 #include <stdexcept>
 #include <filesystem>
 #include <fstream>
@@ -92,6 +93,7 @@ void FileMailbox::upsert(const MailboxElement& el) {
     const std::string content = encodeWireMessage(el);
 
     writeFileOrThrow(initPath, content);
+    logAt(1, "wrote file " + initPath.filename().string());
 
     // Atomic on POSIX; silently replaces readyPath if it already
     // exists, which is exactly the "latest value for this key wins"
@@ -102,6 +104,8 @@ void FileMailbox::upsert(const MailboxElement& el) {
         throw std::runtime_error("FileMailbox: rename '" + initPath.string() +
                                   "' -> '" + readyPath.string() + "' failed: " + ec.message());
     }
+    logAt(2, "renamed \"" + initPath.filename().string() + "\" to \"" +
+                 readyPath.filename().string() + "\"");
 }
 
 std::vector<PendingRecord> FileMailbox::peekPending(int limit) {
@@ -123,6 +127,10 @@ std::vector<PendingRecord> FileMailbox::peekPending(int limit) {
 
         std::error_code ec;
         fs::rename(dirEntry.path(), sendingPath, ec);
+        if (!ec) {
+            logAt(2, "renamed \"" + fname + "\" to \"" +
+                         sendingPath.filename().string() + "\"");
+        }
         // Ignore failure here (e.g. removed concurrently by another
         // process in a multi-reader setup, which this design doesn't
         // otherwise assume) -- just leaves it for a future pass.
@@ -180,7 +188,9 @@ std::vector<PendingRecord> FileMailbox::peekPending(int limit) {
 
 void FileMailbox::erase(const std::string& filepath) {
     std::error_code ec;
-    fs::remove(filepath, ec);
+    if (fs::remove(filepath, ec)) {
+        logAt(2, "deleted \"" + fs::path(filepath).filename().string() + "\"");
+    }
     // Safe unconditional delete-by-path: filepath always points at a
     // sending.* file here (see peekPending()'s phase 1), and nothing
     // other than peekPending()'s own claim sweep ever creates or

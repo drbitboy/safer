@@ -3,6 +3,7 @@
 #include "mailbox.hpp"
 #include "indi_xml_bridge.hpp"
 #include "outbound_archiver.hpp"
+#include "saf_log.hpp"
 
 extern "C" {
 #include "lilxml.h"
@@ -49,11 +50,12 @@ void installShutdownHandlers() {
     sigaction(SIGTERM, &sa, nullptr);
 }
 
-void logv(const Config& cfg, const std::string& msg) {
-    if (cfg.verbose) {
-        std::fprintf(stderr, "saf_local: %s\n", msg.c_str());
-    }
-}
+// Level 1 (-v) and level 2 (-vv) diagnostics. Both go through the
+// shared logger (saf_log.hpp), which runLoop() configures from
+// cfg.verbose, so library code (mailbox, archiver) logs at the same
+// levels.
+void logv(const Config&, const std::string& msg) { logAt(1, msg); }
+void logv2(const Config&, const std::string& msg) { logAt(2, msg); }
 
 void logErr(const std::string& msg) {
     std::fprintf(stderr, "saf_local: ERROR: %s\n", msg.c_str());
@@ -202,6 +204,7 @@ bool linkIsUp() { return true; }
 
 int runLoop(const Config& cfg) {
     installShutdownHandlers();
+    setLogLevel(cfg.verbose);
 
     FileMailbox inboundMailbox(cfg.inboundDir);
     FileMailbox outboundMailbox(cfg.outboundDir);
@@ -387,11 +390,21 @@ int runLoop(const Config& cfg) {
                     std::string msgType, vecType;
                     if (parseVectorTag(tag, msgType, vecType)) {
                         auto elements = decomposeVector(root, vecType, msgType);
+                        if (logLevel() >= 2) {
+                            std::string names;
+                            for (const auto& el : elements) {
+                                if (!names.empty()) names += ", ";
+                                names += el.element;
+                            }
+                            logv2(cfg, "received " + tag + " " +
+                                           findXMLAttValu(root, "device") + "." +
+                                           findXMLAttValu(root, "name") + " -> " +
+                                           std::to_string(elements.size()) +
+                                           " element(s): " + names);
+                        }
                         for (const auto& el : elements) {
                             outboundMailbox.upsert(el);
                         }
-                        logv(cfg, "received " + tag + " -> " +
-                                      std::to_string(elements.size()) + " element(s)");
                     } else {
                         logv(cfg, "skipped non-vector or unhandled message: " + tag);
                     }
