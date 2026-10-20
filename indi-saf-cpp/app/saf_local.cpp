@@ -393,14 +393,13 @@ int runLoop(const Config& cfg) {
                         if (logLevel() >= 2) {
                             std::string names;
                             for (const auto& el : elements) {
-                                if (!names.empty()) names += ", ";
+                                if (!names.empty()) names += ",";
                                 names += el.element;
                             }
                             logv2(cfg, "received " + tag + " " +
                                            findXMLAttValu(root, "device") + "." +
-                                           findXMLAttValu(root, "name") + " -> " +
-                                           std::to_string(elements.size()) +
-                                           " element(s): " + names);
+                                           findXMLAttValu(root, "name") +
+                                           " {" + names + "}");
                         }
                         for (const auto& el : elements) {
                             outboundMailbox.upsert(el);
