@@ -4,7 +4,7 @@
 // archive for a separate "link sender" process to transfer.
 //
 // Directory layout (outboundDir is the FileMailbox directory that
-// saf_local's step C upserts into; linkDir is separate so the mailbox
+// saf_local's step D upserts into; linkDir is separate so the mailbox
 // code never sees the archive files):
 //
 //   <outboundDir>/ready.<type>.<dev>.<prop>.<elem>     written by FileMailbox::upsert()

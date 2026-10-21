@@ -96,8 +96,10 @@ bool loadIniConfig(const std::string& path, Config& cfg, std::string& errOut) {
             cfg.inboundDir = value;
         } else if (key == "outbound_dir") {
             cfg.outboundDir = value;
-        } else if (key == "link_dir") {
-            cfg.linkDir = value;
+        } else if (key == "outbound_link_dir") {
+            cfg.outboundLinkDir = value;
+        } else if (key == "inbound_link_dir") {
+            cfg.inboundLinkDir = value;
         } else if (key == "indiserver_host") {
             cfg.indiserverHost = value;
         } else if (key == "indiserver_port") {
@@ -132,8 +134,10 @@ void printUsage(const char* argv0, FILE* out) {
         "Options (all optional -- defaults shown):\n"
         "  -i, --inbound-dir DIR       default: ./inbound\n"
         "  -o, --outbound-dir DIR      default: ./outbound\n"
-        "  -L, --link-dir DIR          zip archives for the link sender;\n"
+        "  -L, --outbound-link-dir DIR zip archives for the link sender;\n"
         "                                default: <outbound-dir>/link\n"
+        "      --inbound-link-dir DIR  where the link sender delivers sending.zip;\n"
+        "                                default: <inbound-dir>/link\n"
         "  -p, --indiserver-port PORT  default: 7624\n"
         "  -H, --indiserver-host HOST  default: 127.0.0.1\n"
         "  -t, --select-timeout-ms MS  default: 250\n"
@@ -154,7 +158,8 @@ namespace {
 const struct option kLongOpts[] = {
     {"inbound-dir",        required_argument, nullptr, 'i'},
     {"outbound-dir",       required_argument, nullptr, 'o'},
-    {"link-dir",           required_argument, nullptr, 'L'},
+    {"outbound-link-dir",  required_argument, nullptr, 'L'},
+    {"inbound-link-dir",   required_argument, nullptr, 256}, // long-only
     {"indiserver-port",    required_argument, nullptr, 'p'},
     {"indiserver-host",    required_argument, nullptr, 'H'},
     {"select-timeout-ms",  required_argument, nullptr, 't'},
@@ -209,7 +214,8 @@ ParseResult parseArgs(int argc, char** argv, Config& cfg) {
         switch (c) {
             case 'i': cfg.inboundDir = optarg; break;
             case 'o': cfg.outboundDir = optarg; break;
-            case 'L': cfg.linkDir = optarg; break;
+            case 'L': cfg.outboundLinkDir = optarg; break;
+            case 256: cfg.inboundLinkDir = optarg; break;
             case 'H': cfg.indiserverHost = optarg; break;
             case 'p': {
                 std::string errOut;

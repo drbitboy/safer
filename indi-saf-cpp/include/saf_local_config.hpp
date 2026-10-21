@@ -25,20 +25,28 @@ struct Config {
     std::string outboundDir = "./outbound";
     uint16_t indiserverPort = 7624; // INDI's conventional default port
 
-    // Directory for the outbound zip archives (init.zip/sending.zip),
-    // kept separate from outboundDir so the mailbox never sees them.
-    // Empty (the default) means "<outboundDir>/link"; use
-    // linkDirResolved() rather than reading this directly.
-    std::string linkDir;
-    std::string linkDirResolved() const {
-        return linkDir.empty() ? outboundDir + "/link" : linkDir;
+    // Directories for the zip archives, kept separate from the mailbox
+    // directories so the mailbox code never sees them. Empty (the
+    // default) means "<outboundDir>/link" and "<inboundDir>/link"; use
+    // the *Resolved() accessors rather than reading these directly.
+    //   outbound link dir: init.zip / sending.zip built by saf_local's
+    //                      outbound archiver for the link sender
+    //   inbound link dir:  sending.zip delivered by the link sender,
+    //                      unpacked by saf_local into inboundDir
+    std::string outboundLinkDir;
+    std::string inboundLinkDir;
+    std::string outboundLinkDirResolved() const {
+        return outboundLinkDir.empty() ? outboundDir + "/link" : outboundLinkDir;
+    }
+    std::string inboundLinkDirResolved() const {
+        return inboundLinkDir.empty() ? inboundDir + "/link" : inboundLinkDir;
     }
 
     // Optional, with defaults.
     std::string indiserverHost = "127.0.0.1"; // "local" indiserver
-    int selectTimeoutMs = 250;   // (C)'s timeout; also the loop's
+    int selectTimeoutMs = 250;   // (D)'s timeout; also the loop's
                                   // effective pacing when idle
-    int mailboxLimit = 100;      // max records drained per (B.2) lap,
+    int mailboxLimit = 100;      // max records drained per (C.2) lap,
                                   // passed through to
                                   // FileMailbox::peekPending()
     int reconnectDelayMs = 1000; // wait between indiserver reconnect
@@ -58,7 +66,7 @@ struct Config {
 // cfg should already hold whatever defaults you want for anything the
 // file doesn't mention. Recognized keys (case-sensitive), matching
 // the long option names below with '-' replaced by '_':
-//   inbound_dir, outbound_dir, link_dir, indiserver_host, indiserver_port,
+//   inbound_dir, outbound_dir, outbound_link_dir, inbound_link_dir, indiserver_host, indiserver_port,
 //   select_timeout_ms, mailbox_limit, reconnect_delay_ms, verbose
 // Returns false (with errOut set) if the file can't be opened, or if
 // a line is neither blank/comment/section nor a valid key=value pair,

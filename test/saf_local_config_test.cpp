@@ -163,20 +163,35 @@ int main() {
         std::printf("Test 8 (missing config file): PASS\n");
     }
 
-    // --- Test 9: link-dir default derives from outbound-dir; -L overrides ---
+    // --- Test 9: link dirs default from outbound-dir / inbound-dir; flags override ---
     {
         Config cfg;
-        assert(cfg.linkDirResolved() == "./outbound/link");
-        Args args({"saf_local", "-o", "/x/out"});
+        assert(cfg.outboundLinkDirResolved() == "./outbound/link");
+        assert(cfg.inboundLinkDirResolved() == "./inbound/link");
+        Args args({"saf_local", "-o", "/x/out", "-i", "/x/in"});
         ParseResult pr = parseArgs(args.argc(), args.data(), cfg);
         assert(pr.ok);
-        assert(cfg.linkDirResolved() == "/x/out/link");
+        assert(cfg.outboundLinkDirResolved() == "/x/out/link");
+        assert(cfg.inboundLinkDirResolved() == "/x/in/link");
         Config cfg2;
-        Args args2({"saf_local", "-o", "/x/out", "--link-dir", "/y/link"});
+        Args args2({"saf_local", "-o", "/x/out", "--outbound-link-dir", "/y/olink",
+                    "--inbound-link-dir", "/y/ilink"});
         pr = parseArgs(args2.argc(), args2.data(), cfg2);
         assert(pr.ok);
-        assert(cfg2.linkDirResolved() == "/y/link");
-        std::printf("Test 9 (link-dir default and override): PASS\n");
+        assert(cfg2.outboundLinkDirResolved() == "/y/olink");
+        assert(cfg2.inboundLinkDirResolved() == "/y/ilink");
+        Config cfg3;
+        Args args3({"saf_local", "-L", "/z/olink"});
+        assert(parseArgs(args3.argc(), args3.data(), cfg3).ok);
+        assert(cfg3.outboundLinkDirResolved() == "/z/olink");
+        std::string path = "/tmp/saf_local_test_links.ini";
+        { std::ofstream f(path); f << "outbound_link_dir=/i/o\ninbound_link_dir=/i/i\n"; }
+        Config cfg4;
+        Args args4({"saf_local", "--config", path});
+        assert(parseArgs(args4.argc(), args4.data(), cfg4).ok);
+        assert(cfg4.outboundLinkDirResolved() == "/i/o" && cfg4.inboundLinkDirResolved() == "/i/i");
+        std::remove(path.c_str());
+        std::printf("Test 9 (link dirs default and override): PASS\n");
     }
 
     // --- Test 10: -vv, -v -v, cap at 2, INI verbose=2 ---

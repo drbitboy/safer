@@ -12,8 +12,8 @@
 #
 #   -l DIR   local outbound link directory (the one holding sending.zip
 #            and the link.is.active gate file)
-#   -r H:P   remote host and remote inbound directory, e.g.
-#            user@groundhost:/var/saf/inbound/ ; sending.zip lands
+#   -r H:P   remote host and remote inbound LINK directory, e.g.
+#            user@groundhost:/var/saf/inbound/link/ ; sending.zip lands
 #            directly in that directory (a trailing / is added if missing)
 #   -i N     poll interval in seconds (default 5)
 #   -1       run a single pass and exit (see exit codes below)

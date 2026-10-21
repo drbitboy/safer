@@ -17,7 +17,7 @@ saf_link_ssh_prototype.bash -l LOCAL_LINK_DIR -r HOST:REMOTE_INBOUND_DIR/ \
 | Option | Meaning | Default |
 |---|---|---|
 | `-l DIR` | local outbound link directory (e.g. `./outbound/link`) | required |
-| `-r HOST:PATH/` | remote host and inbound directory; `sending.zip` lands directly in it | required |
+| `-r HOST:PATH/` | remote host and the remote *inbound link* directory (e.g. `user@host:/var/saf/inbound/link/`); `sending.zip` lands directly in it, where `saf_local`'s unpacker (`--inbound-link-dir`) picks it up | required |
 | `-i N` | poll interval, seconds | `5` |
 | `-1` | one pass, then exit (exit codes below) | loop forever |
 | `-v` | log the decision made on every pass | off |

@@ -2,6 +2,7 @@
 #include "outbound_archiver.hpp"
 #include "miniz.h"
 #include "saf_log.hpp"
+#include "fs_util.hpp"
 
 #include <algorithm>
 #include <cerrno>
@@ -16,20 +17,14 @@
 namespace saf {
 
 namespace fs = std::filesystem;
+using fsutil::fsyncPath;
+using fsutil::removeLogged;
+using fsutil::renameLogged;
 
 namespace {
 
 const char* const kReady   = "ready";
 const char* const kSending = "sending";
-
-// fsync a file or directory by path. Best effort: returns false on error.
-bool fsyncPath(const fs::path& p) {
-    int fd = ::open(p.c_str(), O_RDONLY);
-    if (fd < 0) return false;
-    int rc = ::fsync(fd);
-    ::close(fd);
-    return rc == 0;
-}
 
 // All regular files in dir whose name is a 5-field mailbox name with
 // the given state prefix.
@@ -49,23 +44,6 @@ std::vector<fs::path> listMailboxFiles(const fs::path& dir, const std::string& s
 // "sending.set.dev.prop.elem" -> "set.dev.prop.elem"
 std::string stripState(const std::string& filename) {
     return filename.substr(filename.find('.') + 1);
-}
-
-// remove() + level-2 "deleted" log when something was actually deleted.
-bool removeLogged(const fs::path& p) {
-    std::error_code ec;
-    bool removed = fs::remove(p, ec);
-    if (removed) logAt(2, "deleted \"" + p.filename().string() + "\"");
-    return removed;
-}
-
-// rename() + level-2 "renamed" log on success.
-void renameLogged(const fs::path& from, const fs::path& to, std::error_code& ec) {
-    fs::rename(from, to, ec);
-    if (!ec) {
-        logAt(2, "renamed \"" + from.filename().string() + "\" to \"" +
-                     to.filename().string() + "\"");
-    }
 }
 
 ArchiveReport fail(const std::string& msg) {

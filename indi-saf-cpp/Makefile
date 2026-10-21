@@ -22,7 +22,7 @@
 # Usage:
 #   make            build the saf_local binary (default target)
 #   make saf_local  same, explicitly
-#   make test       build and run all four test binaries in ../test/
+#   make test       build and run all five test binaries in ../test/
 #   make clean      remove build/ and the saf_local binary
 
 CXX      := g++
@@ -36,7 +36,7 @@ MINIZ_CFLAGS := -Wall -D_LARGEFILE64_SOURCE
 BUILD    := build
 TEST_DIR := ../test
 
-.PHONY: all test test-mailbox test-config test-lilxml test-archiver clean
+.PHONY: all test test-mailbox test-config test-lilxml test-archiver test-unpacker clean
 
 all: saf_local
 
@@ -62,7 +62,8 @@ $(BUILD)/%.o: third_party/miniz/%.c | $(BUILD)
 
 LIB_OBJS    := $(BUILD)/mailbox.o $(BUILD)/wire_format.o \
                $(BUILD)/indi_xml_bridge.o $(BUILD)/saf_local_config.o \
-               $(BUILD)/outbound_archiver.o $(BUILD)/saf_log.o
+               $(BUILD)/outbound_archiver.o $(BUILD)/inbound_unpacker.o \
+               $(BUILD)/saf_log.o
 VENDOR_OBJS := $(BUILD)/lilxml.o $(BUILD)/base64.o $(BUILD)/miniz.o
 
 saf_local: $(BUILD)/saf_local.o $(LIB_OBJS) $(VENDOR_OBJS)
@@ -70,7 +71,7 @@ saf_local: $(BUILD)/saf_local.o $(LIB_OBJS) $(VENDOR_OBJS)
 
 # --- tests (each links only the objects it actually needs) ---
 
-test: test-mailbox test-config test-lilxml test-archiver
+test: test-mailbox test-config test-lilxml test-archiver test-unpacker
 
 test-mailbox: $(BUILD)/mailbox.o $(BUILD)/wire_format.o $(BUILD)/saf_log.o | $(BUILD)
 	$(CXX) $(CXXFLAGS) $(TEST_DIR)/mailbox_smoketest.cpp \
@@ -97,6 +98,14 @@ test-archiver: $(BUILD)/outbound_archiver.o $(BUILD)/miniz.o $(BUILD)/saf_log.o 
 	    $(BUILD)/outbound_archiver.o $(BUILD)/miniz.o $(BUILD)/saf_log.o \
 	    -o $(BUILD)/outbound_archiver_test
 	$(BUILD)/outbound_archiver_test
+
+test-unpacker: $(BUILD)/inbound_unpacker.o $(BUILD)/outbound_archiver.o \
+               $(BUILD)/miniz.o $(BUILD)/saf_log.o | $(BUILD)
+	$(CXX) $(CXXFLAGS) $(TEST_DIR)/inbound_unpacker_test.cpp \
+	    $(BUILD)/inbound_unpacker.o $(BUILD)/outbound_archiver.o \
+	    $(BUILD)/miniz.o $(BUILD)/saf_log.o \
+	    -o $(BUILD)/inbound_unpacker_test
+	$(BUILD)/inbound_unpacker_test
 
 clean:
 	rm -rf $(BUILD) saf_local

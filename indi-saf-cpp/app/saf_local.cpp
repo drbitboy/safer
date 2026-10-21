@@ -2,6 +2,7 @@
 #include "saf_local.hpp"
 #include "mailbox.hpp"
 #include "indi_xml_bridge.hpp"
+#include "inbound_unpacker.hpp"
 #include "outbound_archiver.hpp"
 #include "saf_log.hpp"
 
@@ -57,8 +58,18 @@ void installShutdownHandlers() {
 void logv(const Config&, const std::string& msg) { logAt(1, msg); }
 void logv2(const Config&, const std::string& msg) { logAt(2, msg); }
 
+
 void logErr(const std::string& msg) {
     std::fprintf(stderr, "saf_local: ERROR: %s\n", msg.c_str());
+}
+
+// Logs an error only when it differs from the previous one held in
+// `last`, so a persistent failure does not repeat on every lap.
+void logErrOnce(std::string& last, const std::string& msg) {
+    if (msg != last) {
+        logErr(msg);
+        last = msg;
+    }
 }
 
 } // namespace
@@ -195,7 +206,7 @@ namespace {
 // TBD: the real "is the external link up" test doesn't exist yet.
 // Until it does, archiving runs whenever there is something to
 // archive and no archive is already in flight; the separate link
-// sender process (which only transfers <link-dir>/sending.zip) is what
+// sender process (which only transfers <outbound-link-dir>/sending.zip) is what
 // actually waits for the link. Replace this with the real check, and
 // archiving will then only start while the link is up.
 bool linkIsUp() { return true; }
@@ -218,7 +229,7 @@ int runLoop(const Config& cfg) {
     // call); caller owns the returned elements and must delXMLEle()
     // each one once done with it. If MagAO-X's fork differs (e.g. a
     // separate count rather than NULL-termination, or different
-    // ownership), this loop's (C.2) handling below needs adjusting.
+    // ownership), this loop's (D.2) handling below needs adjusting.
     LilXML* lp = newLilXML();
     if (lp == nullptr) {
         logErr("newLilXML() failed");
@@ -229,17 +240,49 @@ int runLoop(const Config& cfg) {
     bool needReconnect = true;
 
     int exitCode = 0;
-    const std::string linkDir = cfg.linkDirResolved();
+    const std::string outboundLinkDir = cfg.outboundLinkDirResolved();
+    const std::string inboundLinkDir = cfg.inboundLinkDirResolved();
+    std::string lastUnpackErr, lastArchiveErr;
 
     while (!g_shutdownRequested) {
-        // --- (A) archive outbound mailbox files for the link sender ---
+        // --- (A) unpack the archive delivered by the link sender ---
+        // First, so ready.* files already waiting in the inbound mailbox
+        // are replaced by the (newer) archive contents before step C
+        // sends them to indiserver. Local file work only: independent of
+        // the indiserver connection and of the link state.
+        {
+            UnpackReport ur = unpackInbound(cfg.inboundDir, inboundLinkDir);
+            switch (ur.result) {
+                case UnpackResult::Unpacked:
+                    lastUnpackErr.clear();
+                    logv(cfg, "unpacked " + std::to_string(ur.fileCount) +
+                                  " record(s) from " + inboundLinkDir + "/sending.zip");
+                    break;
+                case UnpackResult::Rejected:
+                    lastUnpackErr.clear();
+                    logErr("REJECTED bad archive (" + ur.error + "); moved to " +
+                           ur.rejectedPath);
+                    break;
+                case UnpackResult::Error:
+                    logErrOnce(lastUnpackErr, "unpack failed: " + ur.error);
+                    break;
+                case UnpackResult::NothingToDo:
+                    lastUnpackErr.clear();
+                    break;
+            }
+        }
+
+        // --- (B) archive outbound mailbox files for the link sender ---
         if (linkIsUp()) {
-            ArchiveReport ar = archiveOutbound(cfg.outboundDir, linkDir);
+            ArchiveReport ar = archiveOutbound(cfg.outboundDir, outboundLinkDir);
+            if (ar.result == ArchiveResult::Error) {
+                logErrOnce(lastArchiveErr, "archive failed: " + ar.error);
+            } else {
+                lastArchiveErr.clear();
+            }
             if (ar.result == ArchiveResult::Archived) {
                 logv(cfg, "archived " + std::to_string(ar.fileCount) +
-                              " record(s) into " + linkDir + "/sending.zip");
-            } else if (ar.result == ArchiveResult::Error) {
-                logErr("archive failed: " + ar.error);
+                              " record(s) into " + outboundLinkDir + "/sending.zip");
             } else if (ar.result == ArchiveResult::Busy && ar.fileCount > 0) {
                 logv(cfg, "removed " + std::to_string(ar.fileCount) +
                               " orphaned sending.* file(s) already in the archive");
@@ -277,12 +320,12 @@ int runLoop(const Config& cfg) {
             needReconnect = false;
         }
 
-        // --- (B) check inbound mailbox for pending records ---
+        // --- (C) check inbound mailbox for pending records ---
         auto pending = inboundMailbox.peekPending(cfg.mailboxLimit);
 
-        // (B.1) none pending -> falls through to (C) below (the for
+        // (C.1) none pending -> falls through to (D) below (the for
         // loop over an empty vector is a no-op).
-        // (B.2) pending -> recompose + send each.
+        // (C.2) pending -> recompose + send each.
         bool writeBlocked = false;
         for (const auto& rec : pending) {
             if (writeBlocked) break; // stop draining this lap once we
@@ -342,10 +385,10 @@ int runLoop(const Config& cfg) {
         }
 
         if (needReconnect) {
-            continue; // skip (C) this lap, top of loop will reconnect
+            continue; // skip (D) this lap, top of loop will reconnect
         }
 
-        // --- (C) select() on the indiserver read fd, with timeout ---
+        // --- (D) select() on the indiserver read fd, with timeout ---
         fd_set readfds;
         FD_ZERO(&readfds);
         FD_SET(fd, &readfds);
@@ -365,11 +408,11 @@ int runLoop(const Config& cfg) {
             continue;
         }
         if (rc == 0) {
-            // (C.1) timeout, nothing readable -> back to (A)
+            // (D.1) timeout, nothing readable -> back to (A)
             continue;
         }
 
-        // (C.2) readable
+        // (D.2) readable
         char buf[4096];
         ssize_t n = recv(fd, buf, sizeof(buf), 0);
         if (n > 0) {
