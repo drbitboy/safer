@@ -1,3 +1,4 @@
 build/
 saf_local
 *.o
+saf_local_debug

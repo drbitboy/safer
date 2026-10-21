@@ -22,23 +22,37 @@
 # Usage:
 #   make            build the saf_local binary (default target)
 #   make saf_local  same, explicitly
+#   make debug      build saf_local_debug with -g -O0, objects kept
+#                   separately in build/debug/ so it never mixes with the
+#                   regular build
 #   make test       build and run all five test binaries in ../test/
-#   make clean      remove build/ and the saf_local binary
+#   make clean      remove build/ and the saf_local, saf_local_debug binaries
+
+# Extra compiler flags for every compile; `make debug` sets this to
+# "-g -O0" via a recursive make (see the debug target below).
+EXTRA_FLAGS :=
 
 CXX      := g++
-CXXFLAGS := -std=c++17 -Wall -Wextra -Iinclude -Ithird_party/liblilxml -Ithird_party/miniz
+CXXFLAGS := -std=c++17 -Wall -Wextra -Iinclude -Ithird_party/liblilxml -Ithird_party/miniz $(EXTRA_FLAGS)
 
 CC       := gcc
-CFLAGS   := -Wall
+CFLAGS   := -Wall $(EXTRA_FLAGS)
 # miniz: large-file macro avoids its "may not support large files" #pragma message
-MINIZ_CFLAGS := -Wall -D_LARGEFILE64_SOURCE
+MINIZ_CFLAGS := -Wall -D_LARGEFILE64_SOURCE $(EXTRA_FLAGS)
 
 BUILD    := build
 TEST_DIR := ../test
 
-.PHONY: all test test-mailbox test-config test-lilxml test-archiver test-unpacker clean
+.PHONY: all debug test test-mailbox test-config test-lilxml test-archiver test-unpacker clean
 
 all: saf_local
+
+# Debug build: a sub-make with its own object directory, because the
+# Makefile does not track which flags an existing .o was built with --
+# sharing build/ would silently reuse non-debug objects. The binary is
+# named saf_local_debug so it never replaces or masquerades as saf_local.
+debug:
+	$(MAKE) BUILD=build/debug EXTRA_FLAGS="-g -O0" saf_local_debug
 
 $(BUILD):
 	mkdir -p $(BUILD)
@@ -66,7 +80,7 @@ LIB_OBJS    := $(BUILD)/mailbox.o $(BUILD)/wire_format.o \
                $(BUILD)/saf_log.o
 VENDOR_OBJS := $(BUILD)/lilxml.o $(BUILD)/base64.o $(BUILD)/miniz.o
 
-saf_local: $(BUILD)/saf_local.o $(LIB_OBJS) $(VENDOR_OBJS)
+saf_local saf_local_debug: $(BUILD)/saf_local.o $(LIB_OBJS) $(VENDOR_OBJS)
 	$(CXX) $(CXXFLAGS) $^ -o $@
 
 # --- tests (each links only the objects it actually needs) ---
@@ -108,4 +122,4 @@ test-unpacker: $(BUILD)/inbound_unpacker.o $(BUILD)/outbound_archiver.o \
 	$(BUILD)/inbound_unpacker_test
 
 clean:
-	rm -rf $(BUILD) saf_local
+	rm -rf $(BUILD) saf_local saf_local_debug
