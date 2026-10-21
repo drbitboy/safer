@@ -132,6 +132,7 @@ done
     || die "-r must look like host:remote_path/ (got '$REMOTE')"
 [[ "$INTERVAL" =~ ^[1-9][0-9]*$ ]] || die "-i must be a positive integer (got '$INTERVAL')"
 [[ "$REMOTE" == */ ]] || REMOTE="$REMOTE/"
+REMOTE_HOST="${REMOTE%%:*}:"   # "host:" -- used in log messages
 
 RSYNC_OPTS=(
     --ignore-existing
@@ -166,11 +167,10 @@ one_pass() {
         return 0
     fi
     if [[ ! -f "$src" ]]; then
-        vlog "no $ARCHIVE to send"
         return 0
     fi
 
-    vlog "sending $src to $REMOTE$ARCHIVE"
+    vlog "RSYNCing $src to $REMOTE_HOST"
     out="$("$RSYNC_CMD" "${RSYNC_OPTS[@]}" "$src" "${REMOTE}${ARCHIVE}" 2>"$ERRFILE" 9>&-)"
     rc=$?
 
@@ -184,7 +184,7 @@ one_pass() {
     # ">" appears for a purely local copy). A skipped file prints nothing.
     if printf '%s\n' "$out" | grep -Eq '^[<>]f\+{9} sending\.zip$'; then
         if rm -f -- "$src"; then
-            log "delivered $ARCHIVE to $REMOTE and deleted the local copy"
+            log "RSYNCed $ARCHIVE to $REMOTE_HOST and deleted the local copy"
             LAST_MSG=""
             return 0
         fi
