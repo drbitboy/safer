@@ -132,25 +132,34 @@ check "9b loop: delivered once gate appears, local deleted" \
 kill -TERM "$pid"; wait "$pid"; rc=$?
 check "9c loop: SIGTERM -> clean exit 0" test "$rc" = 0
 
-# 10 -- link.is.active transitions are each logged once (with -v), naming
-#       the directory: "detected" on absent -> present, "no longer detected"
-#       on present -> absent; nothing while the state is unchanged
+# 10 -- link.is.active state is logged (with -v) naming the directory: on the
+#       first pass whatever the startup state is, then once per transition,
+#       and nothing while the state is unchanged
 new_case c10
 SAF_SSH="$TMP/fake_ssh" "$SCRIPT" -l "$L" -r "fakehost:$R" -i 1 -v 2>"$TMP/stderr10" &
 pid=$!
-sleep 2.3                                  # ~3 passes, gate never existed
-check "10a nothing logged about link.is.active while it has never existed" \
-    bash -c "! grep -q 'link.is.active' '$TMP/stderr10'"
+sleep 2.3                                  # ~3 passes, gate absent throughout
+check "10a absent at startup: exactly one 'no longer detected' (first pass), none after" \
+    bash -c "[[ \$(grep -c 'no longer detected' '$TMP/stderr10') == 1 ]] && ! grep -q 'link.is.active detected in' '$TMP/stderr10'"
 touch "$L/link.is.active"; sleep 2.3       # present for ~3 passes
 check "10b exactly one 'detected' message after it appears, naming the directory" \
-    bash -c "[[ \$(grep -c 'link.is.active detected in' '$TMP/stderr10') == 1 ]] && grep -q 'link.is.active detected in $L; link considered up' '$TMP/stderr10' && ! grep -q 'no longer detected' '$TMP/stderr10'"
+    bash -c "[[ \$(grep -c 'link.is.active detected in' '$TMP/stderr10') == 1 ]] && grep -q 'link.is.active detected in $L; link considered up' '$TMP/stderr10'"
 rm -f "$L/link.is.active"; sleep 3.3       # absent for ~4 passes
-check "10c exactly one 'no longer detected' message after it disappears" \
-    bash -c "[[ \$(grep -c 'no longer detected' '$TMP/stderr10') == 1 ]] && grep -q 'link.is.active no longer detected in $L;' '$TMP/stderr10'"
+check "10c second 'no longer detected' after it disappears (two in total), naming the directory" \
+    bash -c "[[ \$(grep -c 'no longer detected' '$TMP/stderr10') == 2 ]] && grep -q 'link.is.active no longer detected in $L;' '$TMP/stderr10'"
 touch "$L/link.is.active"; sleep 2.3       # reappears
 kill -TERM "$pid"; wait "$pid"
 check "10d reappearance logs a second 'detected' message (two in total)" \
     bash -c "[[ \$(grep -c 'link.is.active detected in' '$TMP/stderr10') == 2 ]]"
+
+# 11 -- present at startup: the first pass logs 'detected' once, never 'no longer detected'
+new_case c11; touch "$L/link.is.active"
+SAF_SSH="$TMP/fake_ssh" "$SCRIPT" -l "$L" -r "fakehost:$R" -i 1 -v 2>"$TMP/stderr11" &
+pid=$!
+sleep 2.3
+kill -TERM "$pid"; wait "$pid"
+check "11 present at startup: exactly one 'detected' (first pass), no 'no longer detected'" \
+    bash -c "[[ \$(grep -c 'link.is.active detected in' '$TMP/stderr11') == 1 ]] && ! grep -q 'no longer detected' '$TMP/stderr11'"
 
 echo
 if (( FAILS == 0 )); then echo "All tests passed."; else echo "$FAILS test(s) FAILED."; exit 1; fi

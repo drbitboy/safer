@@ -70,7 +70,8 @@ STOP=0
 LAST_MSG=""
 ERRFILE=""
 SLEEP_PID=""
-GATE_SEEN=0   # 1 if link.is.active was present on the previous pass
+GATE_SEEN=0   # "gate seen" state for transition logging; set properly at
+              # startup, once -l is known (see below)
 
 RSYNC_CMD="${SAF_RSYNC:-rsync}"
 SSH_CMD="${SAF_SSH:-ssh}"
@@ -135,6 +136,12 @@ done
 [[ "$INTERVAL" =~ ^[1-9][0-9]*$ ]] || die "-i must be a positive integer (got '$INTERVAL')"
 [[ "$REMOTE" == */ ]] || REMOTE="$REMOTE/"
 REMOTE_HOST="${REMOTE%%:*}:"   # "host:" -- used in log messages
+
+# Prime GATE_SEEN to the OPPOSITE of the startup state so that the first
+# pass logs the actual state: present -> 0 (first pass logs "detected");
+# absent -> 1 (first pass logs "no longer detected"). Afterwards it is
+# only logged when the state changes.
+if [[ -e "$LINK_DIR/$GATE_FILE" ]]; then GATE_SEEN=0; else GATE_SEEN=1; fi
 
 RSYNC_OPTS=(
     --ignore-existing
