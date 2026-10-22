@@ -17,8 +17,8 @@
 #            directly in that directory (a trailing / is added if missing)
 #   -i N     poll interval in seconds (default 5)
 #   -1       run a single pass and exit (see exit codes below)
-#   -v       verbose: log each rsync attempt, and (once) when
-#            link.is.active is no longer detected
+#   -v       verbose: log each rsync attempt, and (once each) when
+#            link.is.active is detected and when it is no longer detected
 #   --disable-fsync
 #            do NOT pass --fsync to rsync (default: fsync the received
 #            file; needs rsync >= 3.2.4 on both ends)
@@ -165,15 +165,19 @@ one_pass() {
     local out rc
 
     if [[ ! -e "$gate" ]]; then
-        # Say so once, on the pass where the gate file disappears; stay
-        # quiet while it remains absent (including before it ever appeared).
+        # Say so once, on the pass where the gate file disappears (and,
+        # below, once when it appears); stay quiet while the state is
+        # unchanged, including an absent file that has never appeared.
         if (( GATE_SEEN )); then
             vlog "$GATE_FILE no longer detected in $LINK_DIR; link considered down, doing nothing"
             GATE_SEEN=0
         fi
         return 0
     fi
-    GATE_SEEN=1
+    if (( ! GATE_SEEN )); then
+        vlog "$GATE_FILE detected in $LINK_DIR; link considered up"
+        GATE_SEEN=1
+    fi
     if [[ ! -f "$src" ]]; then
         return 0
     fi
