@@ -92,7 +92,9 @@ bool loadIniConfig(const std::string& path, Config& cfg, std::string& errOut) {
         std::string key = trim(trimmed.substr(0, eq));
         std::string value = trim(trimmed.substr(eq + 1));
 
-        if (key == "inbound_dir") {
+        if (key == "name") {
+            cfg.name = value;
+        } else if (key == "inbound_dir") {
             cfg.inboundDir = value;
         } else if (key == "outbound_dir") {
             cfg.outboundDir = value;
@@ -132,6 +134,8 @@ void printUsage(const char* argv0, FILE* out) {
         "indiserver) as a single select()-paced loop.\n"
         "\n"
         "Options (all optional -- defaults shown):\n"
+        "  -n, --name NAME             instance name, prefix of every log line;\n"
+        "                                default: saf_local\n"
         "  -i, --inbound-dir DIR       default: ./inbound\n"
         "  -o, --outbound-dir DIR      default: ./outbound\n"
         "  -L, --outbound-link-dir DIR zip archives for the link sender;\n"
@@ -156,6 +160,7 @@ void printUsage(const char* argv0, FILE* out) {
 namespace {
 
 const struct option kLongOpts[] = {
+    {"name",               required_argument, nullptr, 'n'},
     {"inbound-dir",        required_argument, nullptr, 'i'},
     {"outbound-dir",       required_argument, nullptr, 'o'},
     {"outbound-link-dir",  required_argument, nullptr, 'L'},
@@ -170,7 +175,7 @@ const struct option kLongOpts[] = {
     {"help",               no_argument,       nullptr, 'h'},
     {nullptr, 0, nullptr, 0},
 };
-const char* kShortOpts = "i:o:L:p:H:t:l:r:vc:h";
+const char* kShortOpts = "n:i:o:L:p:H:t:l:r:vc:h";
 
 } // namespace
 
@@ -212,6 +217,7 @@ ParseResult parseArgs(int argc, char** argv, Config& cfg) {
     int c;
     while ((c = getopt_long(argc, argv, kShortOpts, kLongOpts, nullptr)) != -1) {
         switch (c) {
+            case 'n': cfg.name = optarg; break;
             case 'i': cfg.inboundDir = optarg; break;
             case 'o': cfg.outboundDir = optarg; break;
             case 'L': cfg.outboundLinkDir = optarg; break;
@@ -275,6 +281,7 @@ ParseResult parseArgs(int argc, char** argv, Config& cfg) {
 
 bool validateConfig(const Config& cfg, std::string& errOut) {
     std::vector<std::string> missing;
+    if (cfg.name.empty()) missing.push_back("name");
     if (cfg.inboundDir.empty()) missing.push_back("inbound-dir");
     if (cfg.outboundDir.empty()) missing.push_back("outbound-dir");
     if (cfg.indiserverPort == 0) missing.push_back("indiserver-port");

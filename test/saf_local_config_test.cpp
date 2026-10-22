@@ -218,6 +218,32 @@ int main() {
         std::printf("Test 10 (-vv, -v -v, cap, INI verbose=2): PASS\n");
     }
 
+    // --- Test 11: --name / -n / INI name; default is saf_local; empty rejected ---
+    {
+        Config d;
+        assert(d.name == "saf_local");
+        Config a;
+        Args argsA({"saf_local", "-n", "ground"});
+        assert(parseArgs(argsA.argc(), argsA.data(), a).ok && a.name == "ground");
+        Config b;
+        Args argsB({"saf_local", "--name", "space-1"});
+        assert(parseArgs(argsB.argc(), argsB.data(), b).ok && b.name == "space-1");
+        std::string path = "/tmp/saf_local_test_name.ini";
+        { std::ofstream f(path); f << "name=fromfile\n"; }
+        Config c;
+        Args argsC({"saf_local", "--config", path, "-n", "fromcli"});
+        assert(parseArgs(argsC.argc(), argsC.data(), c).ok && c.name == "fromcli"); // CLI wins
+        Config e;
+        Args argsE({"saf_local", "--config", path});
+        assert(parseArgs(argsE.argc(), argsE.data(), e).ok && e.name == "fromfile");
+        std::remove(path.c_str());
+        Config empty;
+        empty.name = "";
+        std::string err;
+        assert(!validateConfig(empty, err) && err.find("name") != std::string::npos);
+        std::printf("Test 11 (-n/--name, INI, default, empty rejected): PASS\n");
+    }
+
     std::printf("All tests passed.\n");
     return 0;
 }

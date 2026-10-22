@@ -199,6 +199,7 @@ in `build/` (gitignored).
   | Flag | INI key | Default |
   |---|---|---|
   | `-i, --inbound-dir` | `inbound_dir` | `./inbound` |
+  | `-n, --name` | `name` | `saf_local` |
   | `-o, --outbound-dir` | `outbound_dir` | `./outbound` |
   | `-p, --indiserver-port` | `indiserver_port` | `7624` |
   | `-H, --indiserver-host` | `indiserver_host` | `127.0.0.1` |

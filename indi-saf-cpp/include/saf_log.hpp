@@ -19,7 +19,12 @@ namespace saf {
 void setLogLevel(int level);
 int logLevel();
 
-// Prints "saf_local: <msg>" to stderr iff level <= current log level.
+// Instance name used as the prefix of every log line ("<name>: <msg>").
+// Defaults to "saf_local"; saf_local sets it from -n/--name at startup.
+void setLogName(const std::string& name);
+const std::string& logName();
+
+// Prints "<name>: <msg>" to stderr iff level <= current log level.
 void logAt(int level, const std::string& msg);
 
 } // namespace saf

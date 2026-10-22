@@ -25,6 +25,11 @@ struct Config {
     std::string outboundDir = "./outbound";
     uint16_t indiserverPort = 7624; // INDI's conventional default port
 
+    // Instance name: the prefix of every log line ("<name>: ..."), so
+    // several saf_local instances writing to one terminal or log can be
+    // told apart.
+    std::string name = "saf_local";
+
     // Directories for the zip archives, kept separate from the mailbox
     // directories so the mailbox code never sees them. Empty (the
     // default) means "<outboundDir>/link" and "<inboundDir>/link"; use
@@ -66,7 +71,7 @@ struct Config {
 // cfg should already hold whatever defaults you want for anything the
 // file doesn't mention. Recognized keys (case-sensitive), matching
 // the long option names below with '-' replaced by '_':
-//   inbound_dir, outbound_dir, outbound_link_dir, inbound_link_dir, indiserver_host, indiserver_port,
+//   name, inbound_dir, outbound_dir, outbound_link_dir, inbound_link_dir, indiserver_host, indiserver_port,
 //   select_timeout_ms, mailbox_limit, reconnect_delay_ms, verbose
 // Returns false (with errOut set) if the file can't be opened, or if
 // a line is neither blank/comment/section nor a valid key=value pair,

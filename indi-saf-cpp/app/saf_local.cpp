@@ -60,7 +60,7 @@ void logv2(const Config&, const std::string& msg) { logAt(2, msg); }
 
 
 void logErr(const std::string& msg) {
-    std::fprintf(stderr, "saf_local: ERROR: %s\n", msg.c_str());
+    std::fprintf(stderr, "%s: ERROR: %s\n", logName().c_str(), msg.c_str());
 }
 
 // Logs an error only when it differs from the previous one held in
@@ -216,6 +216,7 @@ bool linkIsUp() { return true; }
 int runLoop(const Config& cfg) {
     installShutdownHandlers();
     setLogLevel(cfg.verbose);
+    setLogName(cfg.name);
 
     FileMailbox inboundMailbox(cfg.inboundDir);
     FileMailbox outboundMailbox(cfg.outboundDir);
@@ -492,7 +493,8 @@ int main(int argc, char** argv) {
 
     std::string errOut;
     if (!saf::validateConfig(cfg, errOut)) {
-        std::fprintf(stderr, "saf_local: %s\n\n", errOut.c_str());
+        std::fprintf(stderr, "%s: %s\n\n", cfg.name.empty() ? "saf_local" : cfg.name.c_str(),
+                     errOut.c_str());
         saf::printUsage(argv[0], stderr);
         return 2;
     }
