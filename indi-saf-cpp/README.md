@@ -157,7 +157,13 @@ in `build/` (gitignored).
   `sending.zip` and deletes it once the far end acknowledges. Only
   filenames with exactly five dot-separated fields count as records,
   so stray files (e.g. a `ready.zip`) are ignored. `linkIsUp()` in
-  `saf_local.cpp` is a TBD stub returning true. Uses vendored
+  `saf_local.cpp` gates only this archiving step and is driven by
+  `DumpStopTime` (`link_gate.hpp`): vectors from indiserver whose device
+  equals the `-n/--name` value (default `saf_local`) are control
+  messages, never written to the mailbox; a Text vector with property
+  `dump`, element `file` sets it to `On` (2^32-1), `Off` (0), or a UTC
+  `YYYY-mm-ddTHH:MM:SSZ` time. The link is up while now < DumpStopTime;
+  it starts at 0 (down). Uses vendored
   `third_party/miniz/` (`miniz.c` + `miniz.h`, MIT, v3.0.2).
   Caveat: the generic `FileMailbox` still claims any `ready.*` file in
   its own directory, so don't put non-record files there.

@@ -77,7 +77,7 @@ $(BUILD)/%.o: third_party/miniz/%.c | $(BUILD)
 LIB_OBJS    := $(BUILD)/mailbox.o $(BUILD)/wire_format.o \
                $(BUILD)/indi_xml_bridge.o $(BUILD)/saf_local_config.o \
                $(BUILD)/outbound_archiver.o $(BUILD)/inbound_unpacker.o \
-               $(BUILD)/saf_log.o
+               $(BUILD)/saf_log.o $(BUILD)/link_gate.o
 VENDOR_OBJS := $(BUILD)/lilxml.o $(BUILD)/base64.o $(BUILD)/miniz.o
 
 saf_local saf_local_debug: $(BUILD)/saf_local.o $(LIB_OBJS) $(VENDOR_OBJS)
@@ -85,7 +85,7 @@ saf_local saf_local_debug: $(BUILD)/saf_local.o $(LIB_OBJS) $(VENDOR_OBJS)
 
 # --- tests (each links only the objects it actually needs) ---
 
-test: test-mailbox test-config test-lilxml test-archiver test-unpacker
+test: test-mailbox test-config test-lilxml test-archiver test-unpacker test-linkgate
 
 test-mailbox: $(BUILD)/mailbox.o $(BUILD)/wire_format.o $(BUILD)/saf_log.o | $(BUILD)
 	$(CXX) $(CXXFLAGS) $(TEST_DIR)/mailbox_smoketest.cpp \
@@ -120,6 +120,11 @@ test-unpacker: $(BUILD)/inbound_unpacker.o $(BUILD)/outbound_archiver.o \
 	    $(BUILD)/miniz.o $(BUILD)/saf_log.o \
 	    -o $(BUILD)/inbound_unpacker_test
 	$(BUILD)/inbound_unpacker_test
+
+test-linkgate: $(BUILD)/link_gate.o | $(BUILD)
+	$(CXX) $(CXXFLAGS) $(TEST_DIR)/link_gate_test.cpp $(BUILD)/link_gate.o \
+	    -o $(BUILD)/link_gate_test
+	$(BUILD)/link_gate_test
 
 clean:
 	rm -rf $(BUILD) saf_local saf_local_debug

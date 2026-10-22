@@ -5,6 +5,7 @@
 #include "inbound_unpacker.hpp"
 #include "outbound_archiver.hpp"
 #include "saf_log.hpp"
+#include "link_gate.hpp"
 
 extern "C" {
 #include "lilxml.h"
@@ -16,6 +17,7 @@ extern "C" {
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <fcntl.h>
 #include <netdb.h>
 #include <netinet/in.h>
@@ -203,13 +205,37 @@ bool parseVectorTag(const std::string& tag, std::string& msgType, std::string& v
 
 namespace {
 
-// TBD: the real "is the external link up" test doesn't exist yet.
-// Until it does, archiving runs whenever there is something to
-// archive and no archive is already in flight; the separate link
-// sender process (which only transfers <outbound-link-dir>/sending.zip) is what
-// actually waits for the link. Replace this with the real check, and
-// archiving will then only start while the link is up.
-bool linkIsUp() { return true; }
+// Is the external link considered up? Decided by DumpStopTime (see
+// link_gate.hpp), which an operator sets through the "dump"/"file" Text
+// property of saf_local's own pseudo-device. The separate link sender
+// process still does its own wait for the link; this only gates when
+// the outbound archive is built.
+bool linkIsUp() { return linkIsUpAt(std::time(nullptr)); }
+
+// Handles a vector whose device == logName(): it is a control message for
+// this program, never forwarded. Only Text vector "dump" / element "file"
+// does anything; everything else is ignored (logged at -vv).
+void handleControlVector(const Config& cfg, XMLEle* root, const std::string& tag) {
+    const std::string prop = findXMLAttValu(root, "name");
+    if (tag.size() < 10 || tag.compare(tag.size() - 10, 10, "TextVector") != 0 ||
+        prop != "dump") {
+        logv2(cfg, "ignored control message " + tag + " for " + logName() + "." + prop);
+        return;
+    }
+    for (XMLEle* ep = nextXMLEle(root, 1); ep != nullptr; ep = nextXMLEle(root, 0)) {
+        if (std::string(findXMLAttValu(ep, "name")) != "file") continue;
+        const std::string text = pcdataXMLEle(ep);
+        std::uint32_t v;
+        if (!parseDumpValue(text, v)) {
+            logErr("invalid " + logName() + ".dump.file value '" + text +
+                   "' (want On, Off, or YYYY-mm-ddTHH:MM:SSZ); DumpStopTime unchanged");
+            continue;
+        }
+        DumpStopTime = v;
+        logv(cfg, logName() + ".dump.file = '" + text + "' -> DumpStopTime " +
+                      std::to_string(v) + "; link is " + (linkIsUp() ? "up" : "down"));
+    }
+}
 
 } // namespace
 
@@ -432,7 +458,10 @@ int runLoop(const Config& cfg) {
                     XMLEle* root = roots[i];
                     std::string tag = tagXMLEle(root);
                     std::string msgType, vecType;
-                    if (parseVectorTag(tag, msgType, vecType)) {
+                    if (parseVectorTag(tag, msgType, vecType) &&
+                        logName() == findXMLAttValu(root, "device")) {
+                        handleControlVector(cfg, root, tag);
+                    } else if (parseVectorTag(tag, msgType, vecType)) {
                         auto elements = decomposeVector(root, vecType, msgType);
                         if (logLevel() >= 2) {
                             std::string names;
