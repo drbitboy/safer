@@ -132,5 +132,22 @@ check "9b loop: delivered once gate appears, local deleted" \
 kill -TERM "$pid"; wait "$pid"; rc=$?
 check "9c loop: SIGTERM -> clean exit 0" test "$rc" = 0
 
+# 10 -- "link.is.active no longer detected" is logged once, only on the
+#       present -> absent transition, with the directory path; never when the
+#       file was never there
+new_case c10
+SAF_SSH="$TMP/fake_ssh" "$SCRIPT" -l "$L" -r "fakehost:$R" -i 1 -v 2>"$TMP/stderr10" &
+pid=$!
+sleep 2.3                                  # ~3 passes, gate never existed
+check "10a no message when link.is.active never existed" \
+    bash -c "! grep -q 'no longer detected' '$TMP/stderr10'"
+touch "$L/link.is.active"; sleep 2.3       # present for ~3 passes
+check "10b no message while link.is.active is present" \
+    bash -c "! grep -q 'no longer detected' '$TMP/stderr10'"
+rm -f "$L/link.is.active"; sleep 3.3       # absent for ~4 passes
+kill -TERM "$pid"; wait "$pid"
+check "10c exactly one message after it disappears, naming the directory" \
+    bash -c "[[ \$(grep -c 'no longer detected' '$TMP/stderr10') == 1 ]] && grep -q 'link.is.active no longer detected in $L;' '$TMP/stderr10'"
+
 echo
 if (( FAILS == 0 )); then echo "All tests passed."; else echo "$FAILS test(s) FAILED."; exit 1; fi

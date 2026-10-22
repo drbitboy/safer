@@ -20,7 +20,7 @@ saf_link_ssh_prototype.bash -l LOCAL_LINK_DIR -r HOST:REMOTE_INBOUND_DIR/ \
 | `-r HOST:PATH/` | remote host and the remote *inbound link* directory (e.g. `user@host:/var/saf/inbound/link/`); `sending.zip` lands directly in it, where `saf_local`'s unpacker (`--inbound-link-dir`) picks it up | required |
 | `-i N` | poll interval, seconds | `5` |
 | `-1` | one pass, then exit (exit codes below) | loop forever |
-| `-v` | log the decision made on every pass | off |
+| `-v` | verbose: log each rsync attempt, and once when `link.is.active` disappears | off |
 | `--disable-fsync` | do not pass `--fsync` to rsync | fsync on |
 
 Behavior per pass:

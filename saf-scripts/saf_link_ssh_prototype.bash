@@ -17,7 +17,8 @@
 #            directly in that directory (a trailing / is added if missing)
 #   -i N     poll interval in seconds (default 5)
 #   -1       run a single pass and exit (see exit codes below)
-#   -v       verbose: log the decision made on every pass
+#   -v       verbose: log each rsync attempt, and (once) when
+#            link.is.active is no longer detected
 #   --disable-fsync
 #            do NOT pass --fsync to rsync (default: fsync the received
 #            file; needs rsync >= 3.2.4 on both ends)
@@ -69,6 +70,7 @@ STOP=0
 LAST_MSG=""
 ERRFILE=""
 SLEEP_PID=""
+GATE_SEEN=0   # 1 if link.is.active was present on the previous pass
 
 RSYNC_CMD="${SAF_RSYNC:-rsync}"
 SSH_CMD="${SAF_SSH:-ssh}"
@@ -163,9 +165,15 @@ one_pass() {
     local out rc
 
     if [[ ! -e "$gate" ]]; then
-        vlog "no $GATE_FILE; link considered down, doing nothing"
+        # Say so once, on the pass where the gate file disappears; stay
+        # quiet while it remains absent (including before it ever appeared).
+        if (( GATE_SEEN )); then
+            vlog "$GATE_FILE no longer detected in $LINK_DIR; link considered down, doing nothing"
+            GATE_SEEN=0
+        fi
         return 0
     fi
+    GATE_SEEN=1
     if [[ ! -f "$src" ]]; then
         return 0
     fi
