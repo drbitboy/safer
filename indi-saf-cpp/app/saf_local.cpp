@@ -481,20 +481,22 @@ int runLoop(const Config& cfg) {
 int main(int argc, char** argv) {
     saf::Config cfg;
     saf::ParseResult pr = saf::parseArgs(argc, argv, cfg);
+    // Prefix for startup errors: the configured name if -n/--name (or the
+    // INI name) was parsed before the failure, else the default.
+    const std::string who = cfg.name.empty() ? "saf_local" : cfg.name;
     if (pr.helpRequested) {
         saf::printUsage(argv[0], stdout);
         return 0;
     }
     if (!pr.ok) {
-        std::fprintf(stderr, "saf_local: %s\n\n", pr.error.c_str());
+        std::fprintf(stderr, "%s: %s\n\n", who.c_str(), pr.error.c_str());
         saf::printUsage(argv[0], stderr);
         return 2;
     }
 
     std::string errOut;
     if (!saf::validateConfig(cfg, errOut)) {
-        std::fprintf(stderr, "%s: %s\n\n", cfg.name.empty() ? "saf_local" : cfg.name.c_str(),
-                     errOut.c_str());
+        std::fprintf(stderr, "%s: %s\n\n", who.c_str(), errOut.c_str());
         saf::printUsage(argv[0], stderr);
         return 2;
     }
