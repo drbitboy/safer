@@ -18,6 +18,8 @@ extern "C" {
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <filesystem>
+#include <system_error>
 #include <fcntl.h>
 #include <netdb.h>
 #include <netinet/in.h>
@@ -205,35 +207,65 @@ bool parseVectorTag(const std::string& tag, std::string& msgType, std::string& v
 
 namespace {
 
-// Is the external link considered up? Decided by DumpStopTime (see
-// link_gate.hpp), which an operator sets through the "dump"/"file" Text
-// property of saf_local's own pseudo-device. The separate link sender
-// process still does its own wait for the link; this only gates when
-// the outbound archive is built.
-bool linkIsUp() { return linkIsUpAt(std::time(nullptr)); }
+// Is the external link considered up? Decided by DumpStopTime and, when
+// that says "down", by DumpStopCount (see link_gate.hpp). Both are set
+// by an operator through saf_local's own pseudo-device (see
+// handleControlVector). NOTE: when DumpStopTime says "down" this call
+// CONSUMES one count of DumpStopCount, so call it only when an archive
+// would actually be made. The separate link sender process still does
+// its own wait for the link; this only gates when the outbound archive
+// is built.
+bool linkIsUp() { return linkIsUpAt(std::time(nullptr)) || linkIsUpCount(); }
 
 // Handles a vector whose device == logName(): it is a control message for
-// this program, never forwarded. Only Text vector "dump" / element "file"
-// does anything; everything else is ignored (logged at -vv).
+// this program, never forwarded. Does something only for
+//   Text   vector "dump",       element "stop_time" (On | Off | UTC time)
+//   Number vector "stop_count", element "stop_count" (integer)
+// and ignores everything else (logged at -vv).
 void handleControlVector(const Config& cfg, XMLEle* root, const std::string& tag) {
     const std::string prop = findXMLAttValu(root, "name");
-    if (tag.size() < 10 || tag.compare(tag.size() - 10, 10, "TextVector") != 0 ||
-        prop != "dump") {
+    auto endsWith = [&](const char* suffix) {
+        const size_t n = std::strlen(suffix);
+        return tag.size() >= n && tag.compare(tag.size() - n, n, suffix) == 0;
+    };
+    const bool isDump  = endsWith("TextVector")   && prop == "dump";
+    const bool isCount = endsWith("NumberVector") && prop == "stop_count";
+    if (!isDump && !isCount) {
         logv2(cfg, "ignored control message " + tag + " for " + logName() + "." + prop);
         return;
     }
+    const std::string elName = isDump ? "stop_time" : "stop_count";
+    const std::string full = logName() + "." + prop + "." + elName;
+    bool found = false;
     for (XMLEle* ep = nextXMLEle(root, 1); ep != nullptr; ep = nextXMLEle(root, 0)) {
-        if (std::string(findXMLAttValu(ep, "name")) != "file") continue;
+        if (std::string(findXMLAttValu(ep, "name")) != elName) continue;
+        found = true;
         const std::string text = pcdataXMLEle(ep);
-        std::uint32_t v;
-        if (!parseDumpValue(text, v)) {
-            logErr("invalid " + logName() + ".dump.file value '" + text +
-                   "' (want On, Off, or YYYY-mm-ddTHH:MM:SSZ); DumpStopTime unchanged");
-            continue;
+        if (isDump) {
+            std::uint32_t v;
+            if (!parseDumpValue(text, v)) {
+                logErr("invalid " + full + " value '" + text +
+                       "' (want On, Off, or YYYY-mm-ddTHH:MM:SSZ); DumpStopTime unchanged");
+                continue;
+            }
+            DumpStopTime = v;
+            logv(cfg, full + " = '" + text + "' -> DumpStopTime " + std::to_string(v) +
+                          "; time-based link state is " +
+                          (linkIsUpAt(std::time(nullptr)) ? "up" : "down"));
+        } else {
+            int v;
+            if (!parseStopCount(text, v)) {
+                logErr("invalid " + full + " value '" + text +
+                       "' (want an integer); DumpStopCount unchanged");
+                continue;
+            }
+            DumpStopCount = v;
+            logv(cfg, full + " = '" + text + "' -> DumpStopCount " + std::to_string(v));
         }
-        DumpStopTime = v;
-        logv(cfg, logName() + ".dump.file = '" + text + "' -> DumpStopTime " +
-                      std::to_string(v) + "; link is " + (linkIsUp() ? "up" : "down"));
+    }
+    if (!found) {
+        logErr("control message " + tag + " for " + logName() + "." + prop +
+               " has no element named '" + elName + "'");
     }
 }
 
@@ -300,7 +332,19 @@ int runLoop(const Config& cfg) {
         }
 
         // --- (B) archive outbound mailbox files for the link sender ---
-        if (linkIsUp()) {
+        // linkIsUp() spends a DumpStopCount count when the time-based gate is
+        // closed, so call it only when this lap would really make an archive:
+        // something is pending and no archive is already in flight. Otherwise
+        // use the time-based gate alone (no count spent).
+        bool archiveNow;
+        {
+            std::error_code fsec;
+            const bool inFlight =
+                std::filesystem::exists(std::filesystem::path(outboundLinkDir) / "sending.zip", fsec);
+            const bool spendCount = outboundMailbox.pendingCount() > 0 && !inFlight;
+            archiveNow = spendCount ? linkIsUp() : linkIsUpAt(std::time(nullptr));
+        }
+        if (archiveNow) {
             ArchiveReport ar = archiveOutbound(cfg.outboundDir, outboundLinkDir);
             if (ar.result == ArchiveResult::Error) {
                 logErrOnce(lastArchiveErr, "archive failed: " + ar.error);

@@ -3,11 +3,15 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
+#include <cstdlib>
+#include <climits>
 
 namespace saf {
 
 std::uint32_t DumpStopTime = 0;
+int DumpStopCount = 0;
 
 bool parseDumpValue(const std::string& raw, std::uint32_t& out) {
     size_t b = 0, e = raw.size();
@@ -45,8 +49,28 @@ bool parseDumpValue(const std::string& raw, std::uint32_t& out) {
     return true;
 }
 
+bool parseStopCount(const std::string& raw, int& out) {
+    size_t b = 0, e = raw.size();
+    while (b < e && std::isspace(static_cast<unsigned char>(raw[b]))) ++b;
+    while (e > b && std::isspace(static_cast<unsigned char>(raw[e - 1]))) --e;
+    const std::string t = raw.substr(b, e - b);
+    if (t.empty()) return false;
+    char* end = nullptr;
+    const double d = std::strtod(t.c_str(), &end);
+    if (end != t.c_str() + t.size() || !std::isfinite(d)) return false;
+    if (d != std::floor(d) || d < INT_MIN || d > INT_MAX) return false;
+    out = static_cast<int>(d);
+    return true;
+}
+
 bool linkIsUpAt(std::time_t now) {
     return now >= 0 && static_cast<unsigned long long>(now) < DumpStopTime;
+}
+
+bool linkIsUpCount() {
+    if (DumpStopCount < 1) return false;
+    --DumpStopCount;
+    return true;
 }
 
 } // namespace saf

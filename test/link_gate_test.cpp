@@ -36,6 +36,26 @@ int main() {
     DumpStopTime = 0xFFFFFFFFu;
     check(linkIsUpAt(1792701000), "8c On: up");
 
+    // --- stop_count ---
+    int n = -99;
+    check(parseStopCount("5", n) && n == 5, "9a '5' -> 5");
+    check(parseStopCount(" -2 ", n) && n == -2, "9b ' -2 ' -> -2");
+    check(parseStopCount("3.0", n) && n == 3, "9c '3.0' -> 3 (integral value)");
+    n = 42;
+    check(!parseStopCount("2.5", n) && n == 42, "9d 2.5 rejected, out untouched");
+    check(!parseStopCount("abc", n) && !parseStopCount("", n) && !parseStopCount("4x", n),
+          "9e junk/empty rejected");
+    check(!parseStopCount("3000000000", n), "9f beyond int range rejected");
+
+    DumpStopCount = 0;
+    check(!linkIsUpCount() && DumpStopCount == 0, "10a count 0 -> false, unchanged");
+    DumpStopCount = -3;
+    check(!linkIsUpCount() && DumpStopCount == -3, "10b negative -> false, unchanged");
+    DumpStopCount = 2;
+    check(linkIsUpCount() && DumpStopCount == 1, "10c 2 -> true, now 1");
+    check(linkIsUpCount() && DumpStopCount == 0, "10d 1 -> true, now 0");
+    check(!linkIsUpCount() && DumpStopCount == 0, "10e exhausted -> false");
+
     std::printf(fails ? "%d FAILED\n" : "all passed\n", fails);
     return fails ? 1 : 0;
 }
