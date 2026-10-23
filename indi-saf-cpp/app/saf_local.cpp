@@ -221,7 +221,7 @@ bool linkIsUp(bool testOnly = false) {
 }
 
 // Same answer as linkIsUp() but spends no count: for logging and checks.
-bool linkIsUpTestOnly() { return linkIsUp(true); }
+[[maybe_unused]] bool linkIsUpTestOnly() { return linkIsUp(true); }
 
 // Handles a vector whose device == logName(): it is a control message for
 // this program, never forwarded. Does something only for
