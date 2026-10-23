@@ -161,7 +161,7 @@ in `build/` (gitignored).
   `DumpStopTime` (`link_gate.hpp`): vectors from indiserver whose device
   equals the `-n/--name` value (default `saf_local`) are control
   messages, never written to the mailbox; a Text vector with property
-  `dump`, element `stop_time` sets it to `On` (2^32-1), `Off` (0), or a
+  `dump_time`, element `stop_time` sets it to `On` (2^32-1), `Off` (0), or a
   UTC `YYYY-mm-ddTHH:MM:SSZ` time. The link is up while now <
   DumpStopTime; it starts at 0 (down). A Number vector with property
   `dump_count`, element `stop_count` sets `DumpStopCount` (initially 0): while the

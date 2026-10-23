@@ -6,7 +6,7 @@
 // An operator controls it by sending a Text vector to saf_local's own
 // pseudo-device (device name == logName(), default "saf_local"):
 //
-//   Text   property "dump", element "stop_time", value one of
+//   Text   property "dump_time", element "stop_time", value one of
 //     "On"                    -> DumpStopTime = 2^32-1 (link up "forever")
 //     "Off"                   -> DumpStopTime = 0      (link down)
 //     "YYYY-mm-ddTHH:MM:SSZ"  -> DumpStopTime = that UTC time as seconds
