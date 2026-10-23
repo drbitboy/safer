@@ -48,13 +48,19 @@ int main() {
     check(!parseStopCount("3000000000", n), "9f beyond int range rejected");
 
     DumpStopCount = 0;
-    check(!linkIsUpCount() && DumpStopCount == 0, "10a count 0 -> false, unchanged");
+    check(!linkIsUpCount(false) && DumpStopCount == 0, "10a count 0 -> false, unchanged");
     DumpStopCount = -3;
-    check(!linkIsUpCount() && DumpStopCount == -3, "10b negative -> false, unchanged");
+    check(!linkIsUpCount(false) && DumpStopCount == -3, "10b negative -> false, unchanged");
     DumpStopCount = 2;
-    check(linkIsUpCount() && DumpStopCount == 1, "10c 2 -> true, now 1");
-    check(linkIsUpCount() && DumpStopCount == 0, "10d 1 -> true, now 0");
-    check(!linkIsUpCount() && DumpStopCount == 0, "10e exhausted -> false");
+    check(linkIsUpCount(false) && DumpStopCount == 1, "10c 2 -> true, now 1");
+    check(linkIsUpCount(false) && DumpStopCount == 0, "10d 1 -> true, now 0");
+    check(!linkIsUpCount(false) && DumpStopCount == 0, "10e exhausted -> false");
+
+    DumpStopCount = 2;
+    check(linkIsUpCount(true) && linkIsUpCount(true) && DumpStopCount == 2,
+          "10f testOnly=true: true, count not decremented");
+    DumpStopCount = 0;
+    check(!linkIsUpCount(true) && DumpStopCount == 0, "10g testOnly=true, count 0 -> false");
 
     std::printf(fails ? "%d FAILED\n" : "all passed\n", fails);
     return fails ? 1 : 0;

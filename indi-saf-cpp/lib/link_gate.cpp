@@ -67,9 +67,9 @@ bool linkIsUpAt(std::time_t now) {
     return now >= 0 && static_cast<unsigned long long>(now) < DumpStopTime;
 }
 
-bool linkIsUpCount() {
+bool linkIsUpCount(bool testOnly) {
     if (DumpStopCount < 1) return false;
-    --DumpStopCount;
+    if (!testOnly) --DumpStopCount;
     return true;
 }
 

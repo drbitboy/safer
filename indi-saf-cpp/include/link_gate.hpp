@@ -47,8 +47,9 @@ bool parseStopCount(const std::string& text, int& out);
 // True iff now < DumpStopTime.
 bool linkIsUpAt(std::time_t now);
 
-// If DumpStopCount >= 1: decrement it and return true; else return false.
-// Call only when linkIsUpAt() was false (see saf_local.cpp linkIsUp()).
-bool linkIsUpCount();
+// If DumpStopCount >= 1: return true, decrementing it by 1 unless
+// testOnly is true; else return false. Call only when linkIsUpAt() was
+// false (see saf_local.cpp linkIsUp()).
+bool linkIsUpCount(bool testOnly);
 
 } // namespace saf

@@ -215,7 +215,13 @@ namespace {
 // would actually be made. The separate link sender process still does
 // its own wait for the link; this only gates when the outbound archive
 // is built.
-bool linkIsUp() { return linkIsUpAt(std::time(nullptr)) || linkIsUpCount(); }
+// With testOnly == true nothing is consumed (use linkIsUpTestOnly()).
+bool linkIsUp(bool testOnly = false) {
+    return linkIsUpAt(std::time(nullptr)) || linkIsUpCount(testOnly);
+}
+
+// Same answer as linkIsUp() but spends no count: for logging and checks.
+bool linkIsUpTestOnly() { return linkIsUp(true); }
 
 // Handles a vector whose device == logName(): it is a control message for
 // this program, never forwarded. Does something only for
