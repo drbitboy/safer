@@ -207,22 +207,6 @@ bool parseVectorTag(const std::string& tag, std::string& msgType, std::string& v
 
 namespace {
 
-// Is the external link considered up? Decided by DumpStopTime and, when
-// that says "down", by DumpStopCount (see link_gate.hpp). Both are set
-// by an operator through saf_local's own pseudo-device (see
-// handleControlVector). NOTE: when DumpStopTime says "down" this call
-// CONSUMES one count of DumpStopCount, so call it only when an archive
-// would actually be made. The separate link sender process still does
-// its own wait for the link; this only gates when the outbound archive
-// is built.
-// With testOnly == true nothing is consumed (use linkIsUpTestOnly()).
-bool linkIsUp(bool testOnly = false) {
-    return linkIsUpNow(std::time(nullptr), testOnly);
-}
-
-// Same answer as linkIsUp() but spends no count: for logging and checks.
-[[maybe_unused]] bool linkIsUpTestOnly() { return linkIsUp(true); }
-
 // Handles a vector whose device == logName(): it is a control message for
 // this program, never forwarded. Does something only for
 //   Text   vector "dump_time",      element "stop_time" (On | Off | UTC time)
@@ -254,7 +238,7 @@ void handleControlVector(const Config& cfg, XMLEle* root, const std::string& tag
                        "' (want On, Off, or YYYY-mm-ddTHH:MM:SSZ); DumpStopTime unchanged");
                 continue;
             }
-            DumpStopTime = v;
+            setDumpStopTime(v);
             logv(cfg, full + " = '" + text + "' -> DumpStopTime " + std::to_string(v) +
                           "; time-based link state is " +
                           (linkIsUpAt(std::time(nullptr)) ? "up" : "down"));
@@ -265,7 +249,7 @@ void handleControlVector(const Config& cfg, XMLEle* root, const std::string& tag
                        "' (want an integer); DumpStopCount unchanged");
                 continue;
             }
-            DumpStopCount = v;
+            setDumpStopCount(v);
             logv(cfg, full + " = '" + text + "' -> DumpStopCount " + std::to_string(v));
         }
     }

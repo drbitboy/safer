@@ -28,12 +28,12 @@ int main() {
     check(!parseDumpValue("2026-10-22T25:00:00Z", v), "7f hour 25 rejected");
     check(!parseDumpValue("maybe", v) && !parseDumpValue("", v), "7g junk/empty rejected");
 
-    DumpStopTime = 0;
+    setDumpStopTime(0);
     check(!linkIsUpAt(1000), "8a initial/Off: down");
-    DumpStopTime = 1000;
+    setDumpStopTime(1000);
     check(linkIsUpAt(999) && !linkIsUpAt(1000) && !linkIsUpAt(1001),
           "8b up while now < stop; down at and after stop");
-    DumpStopTime = 0xFFFFFFFFu;
+    setDumpStopTime(0xFFFFFFFFu);
     check(linkIsUpAt(1792701000), "8c On: up");
 
     // --- stop_count ---
@@ -47,33 +47,44 @@ int main() {
           "9e junk/empty rejected");
     check(!parseStopCount("3000000000", n), "9f beyond int range rejected");
 
-    DumpStopCount = 0;
-    check(!linkIsUpCount(false) && DumpStopCount == 0, "10a count 0 -> false, unchanged");
-    DumpStopCount = -3;
-    check(!linkIsUpCount(false) && DumpStopCount == -3, "10b negative -> false, unchanged");
-    DumpStopCount = 2;
-    check(linkIsUpCount(false) && DumpStopCount == 1, "10c 2 -> true, now 1");
-    check(linkIsUpCount(false) && DumpStopCount == 0, "10d 1 -> true, now 0");
-    check(!linkIsUpCount(false) && DumpStopCount == 0, "10e exhausted -> false");
+    setDumpStopCount(0);
+    check(!linkIsUpCount(false) && dumpStopCount() == 0, "10a count 0 -> false, unchanged");
+    setDumpStopCount(-3);
+    check(!linkIsUpCount(false) && dumpStopCount() == -3, "10b negative -> false, unchanged");
+    setDumpStopCount(2);
+    check(linkIsUpCount(false) && dumpStopCount() == 1, "10c 2 -> true, now 1");
+    check(linkIsUpCount(false) && dumpStopCount() == 0, "10d 1 -> true, now 0");
+    check(!linkIsUpCount(false) && dumpStopCount() == 0, "10e exhausted -> false");
 
-    DumpStopCount = 2;
-    check(linkIsUpCount(true) && linkIsUpCount(true) && DumpStopCount == 2,
+    setDumpStopCount(2);
+    check(linkIsUpCount(true) && linkIsUpCount(true) && dumpStopCount() == 2,
           "10f testOnly=true: true, count not decremented");
-    DumpStopCount = 0;
-    check(!linkIsUpCount(true) && DumpStopCount == 0, "10g testOnly=true, count 0 -> false");
+    setDumpStopCount(0);
+    check(!linkIsUpCount(true) && dumpStopCount() == 0, "10g testOnly=true, count 0 -> false");
 
     // --- combined rule: the || short-circuits ---
-    DumpStopTime = 2000; DumpStopCount = 3;           // window open at now=1000
-    check(linkIsUpNow(1000, false) && DumpStopCount == 3,
+    setDumpStopTime(2000); setDumpStopCount(3);           // window open at now=1000
+    check(linkIsUpNow(1000, false) && dumpStopCount() == 3,
           "11a time window open: true, count not touched (short-circuit)");
-    DumpStopTime = 1000; DumpStopCount = 3;           // window closed at now=1000
-    check(linkIsUpNow(1000, true) && DumpStopCount == 3,
+    setDumpStopTime(1000); setDumpStopCount(3);           // window closed at now=1000
+    check(linkIsUpNow(1000, true) && dumpStopCount() == 3,
           "11b window closed, testOnly: true, count not spent");
-    check(linkIsUpNow(1000, false) && DumpStopCount == 2,
+    check(linkIsUpNow(1000, false) && dumpStopCount() == 2,
           "11c window closed: true, spends one count");
-    DumpStopCount = 0;
-    check(!linkIsUpNow(1000, false) && DumpStopCount == 0,
+    setDumpStopCount(0);
+    check(!linkIsUpNow(1000, false) && dumpStopCount() == 0,
           "11d window closed, count 0: false");
+
+    // --- the real-clock wrappers ---
+    setDumpStopTime(0xFFFFFFFFu); setDumpStopCount(2);
+    check(linkIsUp() && dumpStopCount() == 2, "12a On: linkIsUp() true, count untouched");
+    setDumpStopTime(0);
+    check(linkIsUpTestOnly() && linkIsUpTestOnly() && dumpStopCount() == 2,
+          "12b Off, count 2: linkIsUpTestOnly() true and spends nothing");
+    check(linkIsUp() && dumpStopCount() == 1, "12c linkIsUp() spends one count");
+    check(linkIsUp(false) && !linkIsUp() && dumpStopCount() == 0,
+          "12d spends the last, then false");
+    check(!linkIsUpTestOnly(), "12e exhausted: linkIsUpTestOnly() false");
 
     std::printf(fails ? "%d FAILED\n" : "all passed\n", fails);
     return fails ? 1 : 0;

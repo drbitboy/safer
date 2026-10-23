@@ -1,7 +1,7 @@
 // link_gate.hpp
 //
 // Process-wide "dump window" state that decides whether the external
-// link is considered up (see linkIsUp() in saf_local.cpp).
+// link is considered up (see linkIsUp() below).
 //
 // An operator controls it by sending a Text vector to saf_local's own
 // pseudo-device (device name == logName(), default "saf_local"):
@@ -30,8 +30,11 @@
 
 namespace saf {
 
-extern std::uint32_t DumpStopTime;
-extern int DumpStopCount;
+// DumpStopTime / DumpStopCount are private to link_gate.cpp; use these.
+void setDumpStopTime(std::uint32_t v);
+void setDumpStopCount(int v);
+std::uint32_t dumpStopTime();
+int dumpStopCount();
 
 // Parses a dump value (surrounding whitespace ignored; "On"/"Off" are
 // case-insensitive). Returns false and leaves `out` untouched if the text
@@ -49,7 +52,7 @@ bool linkIsUpAt(std::time_t now);
 
 // If DumpStopCount >= 1: return true, decrementing it by 1 unless
 // testOnly is true; else return false. Call only when linkIsUpAt() was
-// false (see saf_local.cpp linkIsUp()).
+// false (see linkIsUp() below).
 bool linkIsUpCount(bool testOnly);
 
 // The combined rule: linkIsUpAt(now) || linkIsUpCount(testOnly). The ||
@@ -57,5 +60,14 @@ bool linkIsUpCount(bool testOnly);
 // time window is open. (saf_local.cpp's linkIsUp() calls this with the
 // current time; taking `now` here keeps it testable.)
 bool linkIsUpNow(std::time_t now, bool testOnly);
+
+// The gate saf_local.cpp consults before archiving: linkIsUpNow() with the
+// current time. NOTE: with testOnly == false and the time window closed,
+// this CONSUMES one count of DumpStopCount, so call it only when an
+// archive would actually be made.
+bool linkIsUp(bool testOnly = false);
+
+// Same answer as linkIsUp() but spends no count: for logging and checks.
+bool linkIsUpTestOnly();
 
 } // namespace saf

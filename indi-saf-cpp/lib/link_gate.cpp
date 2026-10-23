@@ -10,8 +10,15 @@
 
 namespace saf {
 
+namespace {
 std::uint32_t DumpStopTime = 0;
 int DumpStopCount = 0;
+} // namespace
+
+void setDumpStopTime(std::uint32_t v) { DumpStopTime = v; }
+void setDumpStopCount(int v) { DumpStopCount = v; }
+std::uint32_t dumpStopTime() { return DumpStopTime; }
+int dumpStopCount() { return DumpStopCount; }
 
 bool parseDumpValue(const std::string& raw, std::uint32_t& out) {
     size_t b = 0, e = raw.size();
@@ -76,5 +83,9 @@ bool linkIsUpCount(bool testOnly) {
 bool linkIsUpNow(std::time_t now, bool testOnly) {
     return linkIsUpAt(now) || linkIsUpCount(testOnly);
 }
+
+bool linkIsUp(bool testOnly) { return linkIsUpNow(std::time(nullptr), testOnly); }
+
+bool linkIsUpTestOnly() { return linkIsUp(true); }
 
 } // namespace saf
