@@ -1,4 +1,4 @@
-// link_gate_test.cpp -- parseDumpValue() and linkIsUpAt().
+// link_gate_test.cpp -- parseDumpValue(), parseStopCount() and LinkGate.
 #include "link_gate.hpp"
 #include <cstdio>
 
@@ -10,6 +10,7 @@ static void check(bool ok, const char* what) {
 
 int main() {
     using namespace saf;
+    LinkGate g;
     std::uint32_t v = 7;
 
     check(parseDumpValue("On", v) && v == 0xFFFFFFFFu, "1 'On' -> 2^32-1");
@@ -28,13 +29,20 @@ int main() {
     check(!parseDumpValue("2026-10-22T25:00:00Z", v), "7f hour 25 rejected");
     check(!parseDumpValue("maybe", v) && !parseDumpValue("", v), "7g junk/empty rejected");
 
-    setDumpStopTime(0);
-    check(!linkIsUpAt(1000), "8a initial/Off: down");
-    setDumpStopTime(1000);
-    check(linkIsUpAt(999) && !linkIsUpAt(1000) && !linkIsUpAt(1001),
+    g.setStopTime(0);
+    check(!g.isUpAt(1000), "8a initial/Off: down");
+    g.setStopTime(1000);
+    check(g.isUpAt(999) && !g.isUpAt(1000) && !g.isUpAt(1001),
           "8b up while now < stop; down at and after stop");
-    setDumpStopTime(0xFFFFFFFFu);
-    check(linkIsUpAt(1792701000), "8c On: up");
+    g.setStopTime(0xFFFFFFFFu);
+    check(g.isUpAt(1792701000), "8c On: up");
+
+    {
+        LinkGate fresh;
+        check(fresh.stopTime() == 0 && fresh.stopCount() == 0 &&
+                  !fresh.isUpAt(1000) && !fresh.isUpTestOnly(),
+              "0 a new LinkGate starts with time 0, count 0, link down");
+    }
 
     // --- stop_count ---
     int n = -99;
@@ -47,44 +55,44 @@ int main() {
           "9e junk/empty rejected");
     check(!parseStopCount("3000000000", n), "9f beyond int range rejected");
 
-    setDumpStopCount(0);
-    check(!linkIsUpCount(false) && dumpStopCount() == 0, "10a count 0 -> false, unchanged");
-    setDumpStopCount(-3);
-    check(!linkIsUpCount(false) && dumpStopCount() == -3, "10b negative -> false, unchanged");
-    setDumpStopCount(2);
-    check(linkIsUpCount(false) && dumpStopCount() == 1, "10c 2 -> true, now 1");
-    check(linkIsUpCount(false) && dumpStopCount() == 0, "10d 1 -> true, now 0");
-    check(!linkIsUpCount(false) && dumpStopCount() == 0, "10e exhausted -> false");
+    g.setStopCount(0);
+    check(!g.isUpCount(false) && g.stopCount() == 0, "10a count 0 -> false, unchanged");
+    g.setStopCount(-3);
+    check(!g.isUpCount(false) && g.stopCount() == -3, "10b negative -> false, unchanged");
+    g.setStopCount(2);
+    check(g.isUpCount(false) && g.stopCount() == 1, "10c 2 -> true, now 1");
+    check(g.isUpCount(false) && g.stopCount() == 0, "10d 1 -> true, now 0");
+    check(!g.isUpCount(false) && g.stopCount() == 0, "10e exhausted -> false");
 
-    setDumpStopCount(2);
-    check(linkIsUpCount(true) && linkIsUpCount(true) && dumpStopCount() == 2,
+    g.setStopCount(2);
+    check(g.isUpCount(true) && g.isUpCount(true) && g.stopCount() == 2,
           "10f testOnly=true: true, count not decremented");
-    setDumpStopCount(0);
-    check(!linkIsUpCount(true) && dumpStopCount() == 0, "10g testOnly=true, count 0 -> false");
+    g.setStopCount(0);
+    check(!g.isUpCount(true) && g.stopCount() == 0, "10g testOnly=true, count 0 -> false");
 
     // --- combined rule: the || short-circuits ---
-    setDumpStopTime(2000); setDumpStopCount(3);           // window open at now=1000
-    check(linkIsUpNow(1000, false) && dumpStopCount() == 3,
+    g.setStopTime(2000); g.setStopCount(3);           // window open at now=1000
+    check(g.isUpNow(1000, false) && g.stopCount() == 3,
           "11a time window open: true, count not touched (short-circuit)");
-    setDumpStopTime(1000); setDumpStopCount(3);           // window closed at now=1000
-    check(linkIsUpNow(1000, true) && dumpStopCount() == 3,
+    g.setStopTime(1000); g.setStopCount(3);           // window closed at now=1000
+    check(g.isUpNow(1000, true) && g.stopCount() == 3,
           "11b window closed, testOnly: true, count not spent");
-    check(linkIsUpNow(1000, false) && dumpStopCount() == 2,
+    check(g.isUpNow(1000, false) && g.stopCount() == 2,
           "11c window closed: true, spends one count");
-    setDumpStopCount(0);
-    check(!linkIsUpNow(1000, false) && dumpStopCount() == 0,
+    g.setStopCount(0);
+    check(!g.isUpNow(1000, false) && g.stopCount() == 0,
           "11d window closed, count 0: false");
 
     // --- the real-clock wrappers ---
-    setDumpStopTime(0xFFFFFFFFu); setDumpStopCount(2);
-    check(linkIsUp() && dumpStopCount() == 2, "12a On: linkIsUp() true, count untouched");
-    setDumpStopTime(0);
-    check(linkIsUpTestOnly() && linkIsUpTestOnly() && dumpStopCount() == 2,
-          "12b Off, count 2: linkIsUpTestOnly() true and spends nothing");
-    check(linkIsUp() && dumpStopCount() == 1, "12c linkIsUp() spends one count");
-    check(linkIsUp(false) && !linkIsUp() && dumpStopCount() == 0,
+    g.setStopTime(0xFFFFFFFFu); g.setStopCount(2);
+    check(g.isUp() && g.stopCount() == 2, "12a On: g.isUp() true, count untouched");
+    g.setStopTime(0);
+    check(g.isUpTestOnly() && g.isUpTestOnly() && g.stopCount() == 2,
+          "12b Off, count 2: g.isUpTestOnly() true and spends nothing");
+    check(g.isUp() && g.stopCount() == 1, "12c g.isUp() spends one count");
+    check(g.isUp(false) && !g.isUp() && g.stopCount() == 0,
           "12d spends the last, then false");
-    check(!linkIsUpTestOnly(), "12e exhausted: linkIsUpTestOnly() false");
+    check(!g.isUpTestOnly(), "12e exhausted: g.isUpTestOnly() false");
 
     std::printf(fails ? "%d FAILED\n" : "all passed\n", fails);
     return fails ? 1 : 0;

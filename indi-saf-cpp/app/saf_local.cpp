@@ -212,7 +212,8 @@ namespace {
 //   Text   vector "dump_time",      element "stop_time" (On | Off | UTC time)
 //   Number vector "dump_count", element "stop_count" (integer)
 // and ignores everything else (logged at -vv).
-void handleControlVector(const Config& cfg, XMLEle* root, const std::string& tag) {
+void handleControlVector(const Config& cfg, LinkGate& gate, XMLEle* root,
+                         const std::string& tag) {
     const std::string prop = findXMLAttValu(root, "name");
     auto endsWith = [&](const char* suffix) {
         const size_t n = std::strlen(suffix);
@@ -235,22 +236,22 @@ void handleControlVector(const Config& cfg, XMLEle* root, const std::string& tag
             std::uint32_t v;
             if (!parseDumpValue(text, v)) {
                 logErr("invalid " + full + " value '" + text +
-                       "' (want On, Off, or YYYY-mm-ddTHH:MM:SSZ); DumpStopTime unchanged");
+                       "' (want On, Off, or YYYY-mm-ddTHH:MM:SSZ); stop time unchanged");
                 continue;
             }
-            setDumpStopTime(v);
-            logv(cfg, full + " = '" + text + "' -> DumpStopTime " + std::to_string(v) +
+            gate.setStopTime(v);
+            logv(cfg, full + " = '" + text + "' -> stop time " + std::to_string(v) +
                           "; time-based link state is " +
-                          (linkIsUpAt(std::time(nullptr)) ? "up" : "down"));
+                          (gate.isUpAt(std::time(nullptr)) ? "up" : "down"));
         } else {
             int v;
             if (!parseStopCount(text, v)) {
                 logErr("invalid " + full + " value '" + text +
-                       "' (want an integer); DumpStopCount unchanged");
+                       "' (want an integer); stop count unchanged");
                 continue;
             }
-            setDumpStopCount(v);
-            logv(cfg, full + " = '" + text + "' -> DumpStopCount " + std::to_string(v));
+            gate.setStopCount(v);
+            logv(cfg, full + " = '" + text + "' -> stop count " + std::to_string(v));
         }
     }
     if (!found) {
@@ -268,6 +269,7 @@ int runLoop(const Config& cfg) {
 
     FileMailbox inboundMailbox(cfg.inboundDir);
     FileMailbox outboundMailbox(cfg.outboundDir);
+    LinkGate gate; // decides whether archiving may run (see link_gate.hpp)
 
     // VERIFY: parseXMLChunk's exact return contract isn't documented
     // in the lilxml.h we have (no doc comment on that declaration).
@@ -322,7 +324,7 @@ int runLoop(const Config& cfg) {
         }
 
         // --- (B) archive outbound mailbox files for the link sender ---
-        // linkIsUp() spends a DumpStopCount count when the time-based gate is
+        // gate.isUp() spends a stop count when the time-based gate is
         // closed, so call it only when this lap would really make an archive:
         // something is pending and no archive is already in flight. Otherwise
         // use the time-based gate alone (no count spent).
@@ -332,7 +334,7 @@ int runLoop(const Config& cfg) {
             const bool inFlight =
                 std::filesystem::exists(std::filesystem::path(outboundLinkDir) / "sending.zip", fsec);
             const bool spendCount = outboundMailbox.pendingCount() > 0 && !inFlight;
-            archiveNow = spendCount ? linkIsUp() : linkIsUpAt(std::time(nullptr));
+            archiveNow = spendCount ? gate.isUp() : gate.isUpAt(std::time(nullptr));
         }
         if (archiveNow) {
             ArchiveReport ar = archiveOutbound(cfg.outboundDir, outboundLinkDir);
@@ -494,7 +496,7 @@ int runLoop(const Config& cfg) {
                     std::string msgType, vecType;
                     if (parseVectorTag(tag, msgType, vecType) &&
                         logName() == findXMLAttValu(root, "device")) {
-                        handleControlVector(cfg, root, tag);
+                        handleControlVector(cfg, gate, root, tag);
                     } else if (parseVectorTag(tag, msgType, vecType)) {
                         auto elements = decomposeVector(root, vecType, msgType);
                         if (logLevel() >= 2) {

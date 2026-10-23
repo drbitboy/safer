@@ -156,15 +156,14 @@ in `build/` (gitignored).
   `sending.<...>` sources. The link sender only ever transfers
   `sending.zip` and deletes it once the far end acknowledges. Only
   filenames with exactly five dot-separated fields count as records,
-  so stray files (e.g. a `ready.zip`) are ignored. `linkIsUp()` in
-  `saf_local.cpp` gates only this archiving step and is driven by
-  `DumpStopTime` (`link_gate.hpp`): vectors from indiserver whose device
+  so stray files (e.g. a `ready.zip`) are ignored. `LinkGate::isUp()`
+  (`link_gate.hpp`) gates only this archiving step: vectors from indiserver whose device
   equals the `-n/--name` value (default `saf_local`) are control
   messages, never written to the mailbox; a Text vector with property
-  `dump_time`, element `stop_time` sets it to `On` (2^32-1), `Off` (0), or a
+  `dump_time`, element `stop_time` sets the stop time to `On` (2^32-1), `Off` (0), or a
   UTC `YYYY-mm-ddTHH:MM:SSZ` time. The link is up while now <
-  DumpStopTime; it starts at 0 (down). A Number vector with property
-  `dump_count`, element `stop_count` sets `DumpStopCount` (initially 0): while the
+  the stop time; it starts at 0 (down). A Number vector with property
+  `dump_count`, element `stop_count` sets the stop count (initially 0): while the
   time window is closed, each archive cycle with a count >= 1 is allowed
   and decrements it. Counts are spent only when something is pending and
   no archive is already in flight. Uses vendored
@@ -188,7 +187,7 @@ in `build/` (gitignored).
   archive is moved to `<inbound-link-dir>/rejected.zip.YYYYmmddHHMMSS`
   (UTC) with nothing published, and logged as an error; I/O errors leave
   `sending.zip` in place for a retry. Stale `init.<5 fields>` files left
-  by a crash are removed first. Unpacking is not gated on `linkIsUp()`.
+  by a crash are removed first. Unpacking is not gated on `LinkGate::isUp()`.
 
   Config split into its own file (`saf_local_config.hpp/.cpp`)
   specifically so it has zero dependency on `liblilxml`/`mailbox.hpp`/

@@ -10,16 +10,6 @@
 
 namespace saf {
 
-namespace {
-std::uint32_t DumpStopTime = 0;
-int DumpStopCount = 0;
-} // namespace
-
-void setDumpStopTime(std::uint32_t v) { DumpStopTime = v; }
-void setDumpStopCount(int v) { DumpStopCount = v; }
-std::uint32_t dumpStopTime() { return DumpStopTime; }
-int dumpStopCount() { return DumpStopCount; }
-
 bool parseDumpValue(const std::string& raw, std::uint32_t& out) {
     size_t b = 0, e = raw.size();
     while (b < e && std::isspace(static_cast<unsigned char>(raw[b]))) ++b;
@@ -70,22 +60,20 @@ bool parseStopCount(const std::string& raw, int& out) {
     return true;
 }
 
-bool linkIsUpAt(std::time_t now) {
-    return now >= 0 && static_cast<unsigned long long>(now) < DumpStopTime;
+bool LinkGate::isUpAt(std::time_t now) const {
+    return now >= 0 && static_cast<unsigned long long>(now) < stopTime_;
 }
 
-bool linkIsUpCount(bool testOnly) {
-    if (DumpStopCount < 1) return false;
-    if (!testOnly) --DumpStopCount;
+bool LinkGate::isUpCount(bool testOnly) {
+    if (stopCount_ < 1) return false;
+    if (!testOnly) --stopCount_;
     return true;
 }
 
-bool linkIsUpNow(std::time_t now, bool testOnly) {
-    return linkIsUpAt(now) || linkIsUpCount(testOnly);
+bool LinkGate::isUpNow(std::time_t now, bool testOnly) {
+    return isUpAt(now) || isUpCount(testOnly);
 }
 
-bool linkIsUp(bool testOnly) { return linkIsUpNow(std::time(nullptr), testOnly); }
-
-bool linkIsUpTestOnly() { return linkIsUp(true); }
+bool LinkGate::isUp(bool testOnly) { return isUpNow(std::time(nullptr), testOnly); }
 
 } // namespace saf
