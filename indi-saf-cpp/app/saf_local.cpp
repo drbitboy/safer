@@ -217,7 +217,7 @@ namespace {
 // is built.
 // With testOnly == true nothing is consumed (use linkIsUpTestOnly()).
 bool linkIsUp(bool testOnly = false) {
-    return linkIsUpAt(std::time(nullptr)) || linkIsUpCount(testOnly);
+    return linkIsUpNow(std::time(nullptr), testOnly);
 }
 
 // Same answer as linkIsUp() but spends no count: for logging and checks.

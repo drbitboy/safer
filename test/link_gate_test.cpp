@@ -62,6 +62,19 @@ int main() {
     DumpStopCount = 0;
     check(!linkIsUpCount(true) && DumpStopCount == 0, "10g testOnly=true, count 0 -> false");
 
+    // --- combined rule: the || short-circuits ---
+    DumpStopTime = 2000; DumpStopCount = 3;           // window open at now=1000
+    check(linkIsUpNow(1000, false) && DumpStopCount == 3,
+          "11a time window open: true, count not touched (short-circuit)");
+    DumpStopTime = 1000; DumpStopCount = 3;           // window closed at now=1000
+    check(linkIsUpNow(1000, true) && DumpStopCount == 3,
+          "11b window closed, testOnly: true, count not spent");
+    check(linkIsUpNow(1000, false) && DumpStopCount == 2,
+          "11c window closed: true, spends one count");
+    DumpStopCount = 0;
+    check(!linkIsUpNow(1000, false) && DumpStopCount == 0,
+          "11d window closed, count 0: false");
+
     std::printf(fails ? "%d FAILED\n" : "all passed\n", fails);
     return fails ? 1 : 0;
 }

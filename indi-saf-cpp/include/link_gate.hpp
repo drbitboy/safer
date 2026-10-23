@@ -52,4 +52,10 @@ bool linkIsUpAt(std::time_t now);
 // false (see saf_local.cpp linkIsUp()).
 bool linkIsUpCount(bool testOnly);
 
+// The combined rule: linkIsUpAt(now) || linkIsUpCount(testOnly). The ||
+// short-circuits, so DumpStopCount is neither read nor changed while the
+// time window is open. (saf_local.cpp's linkIsUp() calls this with the
+// current time; taking `now` here keeps it testable.)
+bool linkIsUpNow(std::time_t now, bool testOnly);
+
 } // namespace saf

@@ -73,4 +73,8 @@ bool linkIsUpCount(bool testOnly) {
     return true;
 }
 
+bool linkIsUpNow(std::time_t now, bool testOnly) {
+    return linkIsUpAt(now) || linkIsUpCount(testOnly);
+}
+
 } // namespace saf
