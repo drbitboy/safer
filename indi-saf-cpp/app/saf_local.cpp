@@ -220,7 +220,7 @@ bool linkIsUp() { return linkIsUpAt(std::time(nullptr)) || linkIsUpCount(); }
 // Handles a vector whose device == logName(): it is a control message for
 // this program, never forwarded. Does something only for
 //   Text   vector "dump",       element "stop_time" (On | Off | UTC time)
-//   Number vector "stop_count", element "stop_count" (integer)
+//   Number vector "dump_count", element "stop_count" (integer)
 // and ignores everything else (logged at -vv).
 void handleControlVector(const Config& cfg, XMLEle* root, const std::string& tag) {
     const std::string prop = findXMLAttValu(root, "name");
@@ -229,7 +229,7 @@ void handleControlVector(const Config& cfg, XMLEle* root, const std::string& tag
         return tag.size() >= n && tag.compare(tag.size() - n, n, suffix) == 0;
     };
     const bool isDump  = endsWith("TextVector")   && prop == "dump";
-    const bool isCount = endsWith("NumberVector") && prop == "stop_count";
+    const bool isCount = endsWith("NumberVector") && prop == "dump_count";
     if (!isDump && !isCount) {
         logv2(cfg, "ignored control message " + tag + " for " + logName() + "." + prop);
         return;

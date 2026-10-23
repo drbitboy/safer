@@ -16,7 +16,7 @@
 // down when now >= DumpStopTime. DumpStopTime starts at 0, so the link
 // is DOWN until an operator turns it on.
 //
-//   Number property "stop_count", element "stop_count", an integer,
+//   Number property "dump_count", element "stop_count", an integer,
 //   is stored in DumpStopCount (initially 0). It matters only while
 //   linkIsUpAt() is false: each linkIsUpCount() call then returns true
 //   and decrements DumpStopCount if it is positive, else returns false

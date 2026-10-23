@@ -164,7 +164,7 @@ in `build/` (gitignored).
   `dump`, element `stop_time` sets it to `On` (2^32-1), `Off` (0), or a
   UTC `YYYY-mm-ddTHH:MM:SSZ` time. The link is up while now <
   DumpStopTime; it starts at 0 (down). A Number vector with property
-  and element `stop_count` sets `DumpStopCount` (initially 0): while the
+  `dump_count`, element `stop_count` sets `DumpStopCount` (initially 0): while the
   time window is closed, each archive cycle with a count >= 1 is allowed
   and decrements it. Counts are spent only when something is pending and
   no archive is already in flight. Uses vendored
