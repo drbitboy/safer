@@ -1,6 +1,6 @@
 // saf_local_config.hpp
 //
-// Config struct and all argument/INI-file parsing for saf_local.
+// Config struct and command-line parsing for saf_local.
 // Deliberately has NO dependency on liblilxml or mailbox.hpp/
 // indi_xml_bridge.hpp -- everything in this file is pure string/int
 // parsing, so it can be compiled and linked (and tested) completely
@@ -20,7 +20,7 @@ struct Config {
     // strictly required to run saf_local anymore. validateConfig()
     // is kept as a safety net in case a future field needs to be
     // genuinely required, or someone explicitly sets one of these
-    // empty/zero via a config file.
+    // empty/zero on the command line.
     std::string inboundDir = "./inbound";
     std::string outboundDir = "./outbound";
     uint16_t indiserverPort = 7624; // INDI's conventional default port
@@ -49,8 +49,8 @@ struct Config {
 
     // Optional, with defaults.
     std::string indiserverHost = "127.0.0.1"; // "local" indiserver
-    int selectTimeoutMs = 250;   // (D)'s timeout; also the loop's
-                                  // effective pacing when idle
+    int loopPauseMs = 0;         // pause after each lap (-p/--loopPause);
+                                  // (D)'s select() timeout is fixed at 100 ms
     int mailboxLimit = 100;      // max records drained per (C.2) lap,
                                   // passed through to
                                   // FileMailbox::peekPending()
@@ -64,24 +64,6 @@ struct Config {
     // sensible reason to make graceful shutdown itself optional.
 };
 
-// Parses an INI-format file: "key=value" lines, optional "[section]"
-// headers (recognized but not filtered on -- all keys apply
-// regardless of section), "#" or ";" starts a comment, blank lines
-// ignored. Only overwrites fields actually present in the file, so
-// cfg should already hold whatever defaults you want for anything the
-// file doesn't mention. Recognized keys (case-sensitive), matching
-// the long option names below with '-' replaced by '_':
-//   name, inbound_dir, outbound_dir, outbound_link_dir, inbound_link_dir, indiserver_host, indiserver_port,
-//   select_timeout_ms, mailbox_limit, reconnect_delay_ms, verbose
-// Returns false (with errOut set) if the file can't be opened, or if
-// a line is neither blank/comment/section nor a valid key=value pair,
-// or if indiserver_port/*_ms/mailbox_limit fail to parse as integers,
-// or if verbose isn't one of true/false/yes/no/on/off (case-insensitive,
-// true=1, false=0) or an integer 0, 1 or 2.
-// An unrecognized key is ignored, not an error (forward-compatible
-// with a config file that has extra keys for a newer version).
-bool loadIniConfig(const std::string& path, Config& cfg, std::string& errOut);
-
 struct ParseResult {
     bool ok = false;
     bool helpRequested = false; // -h/--help was given; caller should
@@ -91,19 +73,16 @@ struct ParseResult {
                                  // helpRequested is false
 };
 
-// Parses argv. If --config/-c is present anywhere in argv, that file
-// is loaded FIRST (via loadIniConfig), regardless of its position
-// relative to other flags -- then every other flag actually given on
-// the command line overwrites the corresponding field, so CLI always
-// wins over the config file regardless of argument order. cfg should
-// hold whatever built-in defaults you want for anything neither the
-// config file nor the command line sets.
+// Parses argv; every flag actually given overwrites the corresponding
+// field, and cfg keeps whatever built-in default it already held for
+// anything not given. There is no config file (the MagAOXApp
+// framework supplies one when this becomes a MagAOXApp).
 ParseResult parseArgs(int argc, char** argv, Config& cfg);
 
-// Checks that inboundDir, outboundDir, and indiserverPort are all
-// set (non-empty / non-zero). All three now have built-in defaults
+// Checks that name, inboundDir, outboundDir, and indiserverPort are all
+// set (non-empty / non-zero). All have built-in defaults
 // (see Config above), so this only fails if something explicitly set
-// one of them to empty/0 (e.g. an unusual config file) -- not a
+// one of them to empty/0 -- not a
 // normal case, but still checked rather than silently passing an
 // empty directory or port 0 through to runLoop().
 bool validateConfig(const Config& cfg, std::string& errOut);

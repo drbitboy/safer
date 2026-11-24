@@ -1,7 +1,7 @@
 // saf_local_config_test.cpp
 //
-// Ad hoc smoke test for saf_local_config.hpp/.cpp (Config parsing,
-// CLI args, INI files). Deliberately has NO dependency on liblilxml,
+// Ad hoc smoke test for saf_local_config.hpp/.cpp (Config defaults and
+// command-line parsing; there is no config file). Deliberately has NO dependency on liblilxml,
 // mailbox.hpp, or indi_xml_bridge.hpp -- unlike saf_local.cpp's
 // runLoop(), this logic is fully self-contained and links without
 // needing the vendored liblilxml source at all. Wired into
@@ -14,7 +14,6 @@
 #include "saf_local_config.hpp"
 #include <cassert>
 #include <cstdio>
-#include <fstream>
 #include <vector>
 #include <cstring>
 
@@ -45,8 +44,7 @@ int main() {
     }
 
     // --- Test 1b: validateConfig still catches an explicitly-emptied
-    //     field (e.g. from an unusual config file), even though the
-    //     required-ness is no longer the normal case ---
+    //     field, even though the required-ness is no longer the normal case ---
     {
         Config cfg;
         cfg.inboundDir = ""; // simulate something explicitly clearing it
@@ -60,15 +58,15 @@ int main() {
     // --- Test 2: plain CLI flags set everything ---
     {
         Config cfg;
-        Args args({"saf_local", "-i", "/tmp/in", "-o", "/tmp/out", "-p", "7624",
-                    "-H", "10.0.0.5", "-t", "500", "-l", "50", "-r", "2000", "-v"});
+        Args args({"saf_local", "-i", "/tmp/in", "-o", "/tmp/out", "-P", "7625",
+                    "-H", "10.0.0.5", "-p", "500", "-l", "50", "-r", "2000", "-v"});
         ParseResult pr = parseArgs(args.argc(), args.data(), cfg);
         assert(pr.ok && !pr.helpRequested);
         assert(cfg.inboundDir == "/tmp/in");
         assert(cfg.outboundDir == "/tmp/out");
-        assert(cfg.indiserverPort == 7624);
+        assert(cfg.indiserverPort == 7625);
         assert(cfg.indiserverHost == "10.0.0.5");
-        assert(cfg.selectTimeoutMs == 500);
+        assert(cfg.loopPauseMs == 500);
         assert(cfg.mailboxLimit == 50);
         assert(cfg.reconnectDelayMs == 2000);
         assert(cfg.verbose == 1);
@@ -90,77 +88,47 @@ int main() {
     // --- Test 4: bad integer ---
     {
         Config cfg;
-        Args args({"saf_local", "-p", "not-a-number"});
+        Args args({"saf_local", "-P", "not-a-number"});
         ParseResult pr = parseArgs(args.argc(), args.data(), cfg);
         assert(!pr.ok);
         assert(!pr.helpRequested);
         assert(!pr.error.empty());
-        std::printf("Test 4 (bad --indiserver-port): PASS\n");
+        std::printf("Test 4 (bad --Port): PASS\n");
     }
 
-    // --- Test 5: INI config file loaded, CLI overrides it ---
+    // --- Test 5: -P/--Port range and -p/--loopPause validation; defaults ---
     {
-        std::string path = "/tmp/saf_local_test.ini";
-        {
-            std::ofstream f(path);
-            f << "# comment\n"
-              << "[saf_local]\n"
-              << "inbound_dir=/cfg/in\n"
-              << "outbound_dir=/cfg/out\n"
-              << "indiserver_port=8000\n"
-              << "select_timeout_ms=111\n"
-              << "verbose=yes\n";
+        Config d;
+        assert(d.indiserverPort == 7624 && d.loopPauseMs == 0);
+        Config a;
+        Args argsA({"saf_local", "--Port", "9000", "--loopPause", "250"});
+        assert(parseArgs(argsA.argc(), argsA.data(), a).ok);
+        assert(a.indiserverPort == 9000 && a.loopPauseMs == 250);
+        for (const char* bad : {"0", "65536", "-1", "x"}) {
+            Config b;
+            Args argsB({"saf_local", "-P", bad});
+            assert(!parseArgs(argsB.argc(), argsB.data(), b).ok);
         }
-        Config cfg;
-        // select-timeout-ms given on CLI should override the config
-        // file's 111, regardless of --config appearing BEFORE it.
-        Args args({"saf_local", "--config", path, "-t", "999"});
-        ParseResult pr = parseArgs(args.argc(), args.data(), cfg);
-        assert(pr.ok);
-        assert(cfg.inboundDir == "/cfg/in");       // from config file
-        assert(cfg.outboundDir == "/cfg/out");     // from config file
-        assert(cfg.indiserverPort == 8000);        // from config file
-        assert(cfg.selectTimeoutMs == 999);        // CLI override
-        assert(cfg.verbose == 1);                   // from config file (yes)
-        std::printf("Test 5 (config file + CLI override): PASS\n");
-    }
-
-    // --- Test 6: --config position doesn't matter for override order ---
-    {
-        std::string path = "/tmp/saf_local_test.ini";
-        Config cfg;
-        // Same override, but --config comes AFTER -t this time.
-        Args args({"saf_local", "-t", "999", "--config", path});
-        ParseResult pr = parseArgs(args.argc(), args.data(), cfg);
-        assert(pr.ok);
-        assert(cfg.selectTimeoutMs == 999); // CLI still wins
-        std::printf("Test 6 (--config position independence): PASS\n");
-    }
-
-    // --- Test 7: config file with a malformed line ---
-    {
-        std::string path = "/tmp/saf_local_test_bad.ini";
-        {
-            std::ofstream f(path);
-            f << "this line has no equals sign\n";
+        for (const char* bad : {"-1", "x", "1.5"}) {
+            Config c;
+            Args argsC({"saf_local", "-p", bad});
+            assert(!parseArgs(argsC.argc(), argsC.data(), c).ok);
         }
-        Config cfg;
-        std::string err;
-        bool ok = loadIniConfig(path, cfg, err);
-        assert(!ok);
-        assert(!err.empty());
-        std::printf("Test 7 (malformed config line): PASS\n");
+        Config z;
+        Args argsZ({"saf_local", "-p", "0"});
+        assert(parseArgs(argsZ.argc(), argsZ.data(), z).ok && z.loopPauseMs == 0);
+        std::printf("Test 5 (-P/--Port, -p/--loopPause): PASS\n");
     }
 
-    // --- Test 8: missing config file ---
+    // --- Test 6: the removed options are rejected: -c/--config, -t ---
     {
-        Config cfg;
-        Args args({"saf_local", "--config", "/tmp/does_not_exist.ini"});
-        ParseResult pr = parseArgs(args.argc(), args.data(), cfg);
-        assert(!pr.ok);
-        assert(!pr.helpRequested);
-        assert(pr.error.find("could not open") != std::string::npos);
-        std::printf("Test 8 (missing config file): PASS\n");
+        for (const char* bad : {"-c", "--config", "-t", "--select-timeout-ms"}) {
+            Config cfg;
+            Args args({"saf_local", bad, "x"});
+            ParseResult pr = parseArgs(args.argc(), args.data(), cfg);
+            assert(!pr.ok && !pr.helpRequested);
+        }
+        std::printf("Test 6 (-c/--config and -t no longer exist): PASS\n");
     }
 
     // --- Test 9: link dirs default from outbound-dir / inbound-dir; flags override ---
@@ -184,13 +152,6 @@ int main() {
         Args args3({"saf_local", "-L", "/z/olink"});
         assert(parseArgs(args3.argc(), args3.data(), cfg3).ok);
         assert(cfg3.outboundLinkDirResolved() == "/z/olink");
-        std::string path = "/tmp/saf_local_test_links.ini";
-        { std::ofstream f(path); f << "outbound_link_dir=/i/o\ninbound_link_dir=/i/i\n"; }
-        Config cfg4;
-        Args args4({"saf_local", "--config", path});
-        assert(parseArgs(args4.argc(), args4.data(), cfg4).ok);
-        assert(cfg4.outboundLinkDirResolved() == "/i/o" && cfg4.inboundLinkDirResolved() == "/i/i");
-        std::remove(path.c_str());
         std::printf("Test 9 (link dirs default and override): PASS\n");
     }
 
@@ -205,17 +166,7 @@ int main() {
         Config c;
         Args argsC({"saf_local", "-v", "--verbose", "-v"});
         assert(parseArgs(argsC.argc(), argsC.data(), c).ok && c.verbose == 2);
-        std::string path = "/tmp/saf_local_test_v2.ini";
-        { std::ofstream f(path); f << "verbose=2\n"; }
-        Config d;
-        Args argsD({"saf_local", "--config", path});
-        assert(parseArgs(argsD.argc(), argsD.data(), d).ok && d.verbose == 2);
-        { std::ofstream f(path); f << "verbose=3\n"; }
-        Config e;
-        Args argsE({"saf_local", "--config", path});
-        assert(!parseArgs(argsE.argc(), argsE.data(), e).ok);
-        std::remove(path.c_str());
-        std::printf("Test 10 (-vv, -v -v, cap, INI verbose=2): PASS\n");
+        std::printf("Test 10 (-vv, -v -v, cap): PASS\n");
     }
 
     // --- Test 11: --name / -n / INI name; default is saf_local; empty rejected ---
@@ -228,20 +179,11 @@ int main() {
         Config b;
         Args argsB({"saf_local", "--name", "space-1"});
         assert(parseArgs(argsB.argc(), argsB.data(), b).ok && b.name == "space-1");
-        std::string path = "/tmp/saf_local_test_name.ini";
-        { std::ofstream f(path); f << "name=fromfile\n"; }
-        Config c;
-        Args argsC({"saf_local", "--config", path, "-n", "fromcli"});
-        assert(parseArgs(argsC.argc(), argsC.data(), c).ok && c.name == "fromcli"); // CLI wins
-        Config e;
-        Args argsE({"saf_local", "--config", path});
-        assert(parseArgs(argsE.argc(), argsE.data(), e).ok && e.name == "fromfile");
-        std::remove(path.c_str());
         Config empty;
         empty.name = "";
         std::string err;
         assert(!validateConfig(empty, err) && err.find("name") != std::string::npos);
-        std::printf("Test 11 (-n/--name, INI, default, empty rejected): PASS\n");
+        std::printf("Test 11 (-n/--name, default, empty rejected): PASS\n");
     }
 
     std::printf("All tests passed.\n");

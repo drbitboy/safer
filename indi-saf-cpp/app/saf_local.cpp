@@ -143,6 +143,10 @@ void interruptibleSleepMs(int ms) {
     }
 }
 
+// (D)'s select() timeout, fixed (the pause between laps is
+// cfg.loopPauseMs, -p/--loopPause).
+const int kSelectTimeoutMs = 100;
+
 // Sent once after each successful connect() to make indiserver stream
 // all properties to us. INDI v1.7 specifies the version attribute on
 // getProperties as required; it is included here for that reason
@@ -295,7 +299,12 @@ int runLoop(const Config& cfg) {
     const std::string inboundLinkDir = cfg.inboundLinkDirResolved();
     std::string lastUnpackErr, lastArchiveErr;
 
+    bool firstLap = true;
     while (!g_shutdownRequested) {
+        if (!firstLap && cfg.loopPauseMs > 0) interruptibleSleepMs(cfg.loopPauseMs);
+        firstLap = false;
+        if (g_shutdownRequested) break;
+
         // --- (A) unpack the archive delivered by the link sender ---
         // First, so ready.* files already waiting in the inbound mailbox
         // are replaced by the (newer) archive contents before step C
@@ -456,8 +465,8 @@ int runLoop(const Config& cfg) {
         FD_ZERO(&readfds);
         FD_SET(fd, &readfds);
         struct timeval tv;
-        tv.tv_sec = cfg.selectTimeoutMs / 1000;
-        tv.tv_usec = (cfg.selectTimeoutMs % 1000) * 1000;
+        tv.tv_sec = 0;
+        tv.tv_usec = kSelectTimeoutMs * 1000;
 
         int rc = select(fd + 1, &readfds, nullptr, nullptr, &tv);
         if (rc < 0) {

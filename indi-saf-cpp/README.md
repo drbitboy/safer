@@ -193,37 +193,42 @@ in `build/` (gitignored).
   specifically so it has zero dependency on `liblilxml`/`mailbox.hpp`/
   `indi_xml_bridge.hpp` and can be linked and tested without touching
   the vendored liblilxml source at all — see
-  `../test/saf_local_config_test.cpp` (`make test-config`; 8 cases,
-  all passing: required-field validation, CLI flags, `--help`, bad
-  input, INI file loading, CLI-overrides-config-file regardless of
-  `--config`'s position on the command line, malformed/missing config
-  files). `saf_local.cpp`'s `runLoop()` itself has its liblilxml
+  `../test/saf_local_config_test.cpp` (`make test-config`: defaults,
+  required-field validation, CLI flags, `--help`, bad input, `-P` and
+  `-p` ranges, removed options rejected, link dirs, `-v` levels,
+  `-n`). `saf_local.cpp`'s `runLoop()` itself has its liblilxml
   parsing layer verified for real now too (see "Vendored
   liblilxml/base64 source" below) — what's specifically NOT
   runtime-tested is the socket/`select()` plumbing, since there's no
   running `indiserver` available to connect to in this environment.
 
-  Command-line / INI parameters (all optional now — see below):
+  Command-line parameters (all optional — see below; there is no config
+  file, the MagAOXApp framework will supply one):
 
-  | Flag | INI key | Default |
-  |---|---|---|
-  | `-i, --inbound-dir` | `inbound_dir` | `./inbound` |
-  | `-n, --name` | `name` | `saf_local` |
-  | `-o, --outbound-dir` | `outbound_dir` | `./outbound` |
-  | `-p, --indiserver-port` | `indiserver_port` | `7624` |
-  | `-H, --indiserver-host` | `indiserver_host` | `127.0.0.1` |
-  | `-t, --select-timeout-ms` | `select_timeout_ms` | `250` |
-  | `-l, --mailbox-limit` | `mailbox_limit` | `100` |
-  | `-r, --reconnect-delay-ms` | `reconnect_delay_ms` | `1000` |
-  | `-v, --verbose` (repeatable: `-vv`, `-v -v`) | `verbose` (`0`/`1`/`2`, or `true`/`false`) | `0` |
-  | `-c, --config` | — | — |
+  | Flag | Default |
+  |---|---|
+  | `-i, --inbound-dir` | `./inbound` |
+  | `-n, --name` | `saf_local` |
+  | `-o, --outbound-dir` | `./outbound` |
+  | `-L, --outbound-link-dir` / `--inbound-link-dir` | `<dir>/link` |
+  | `-P, --Port` | `7624` |
+  | `-H, --indiserver-host` | `127.0.0.1` |
+  | `-p, --loopPause` (ms, >= 0) | `0` |
+  | `-l, --mailbox-limit` | `100` |
+  | `-r, --reconnect-delay-ms` | `1000` |
+  | `-v, --verbose` (repeatable: `-vv`, `-v -v`) | off |
+
+  `-p/--loopPause` is the pause after each lap of the loop; step (D)'s
+  `select()` timeout is fixed at 100 ms. The option names follow the
+  MagAOXApp conventions (`-n/--name`, `-p/loopPause`) so the later
+  conversion keeps them.
 
   `./saf_local` with zero flags now runs immediately against sensible
   defaults (`./inbound`, `./outbound`, port `7624` on `127.0.0.1`) —
   confirmed working: it creates both mailbox directories if they don't
   exist and starts attempting to connect. `validateConfig()` is kept
   as a safety net rather than removed — it still catches an explicitly
-  emptied field (e.g. an unusual config file setting `inbound_dir=`),
+  emptied field (e.g. `-i ""`),
   even though hitting that case isn't the normal path anymore.
 
   **Logging levels** (stderr, via `saf_log.hpp`; library code logs
@@ -233,11 +238,6 @@ in `build/` (gitignored).
   `received <tag> <dev>.<prop>.{<elemA>,<elemB>,...}`,
   `renamed "<from>" to "<to>"` and `deleted "<file>"` (filenames only,
   no directory). Errors are always logged.
-
-  `--config`/`-c` loads an INI file as a base layer of settings;
-  any flag actually given on the command line overrides the
-  corresponding INI value, regardless of where `--config` appears
-  among the other flags (tested explicitly — see Test 6).
 
   Parameters added beyond your original four, worth knowing about:
   `--indiserver-host` (you asked for a port; a "local" indiserver is
