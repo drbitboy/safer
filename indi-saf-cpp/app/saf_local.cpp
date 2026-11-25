@@ -144,8 +144,23 @@ void interruptibleSleepMs(int ms) {
 }
 
 // (D)'s select() timeout, fixed (the pause between laps is
-// cfg.loopPauseMs, -p/--loopPause).
+// cfg.loopPauseNs, -p/--loopPause).
 const int kSelectTimeoutMs = 100;
+
+// Like interruptibleSleepMs() but in nanoseconds: sleeps in chunks of at
+// most 100 ms, re-checking g_shutdownRequested between chunks; a signal
+// ends the current chunk early (EINTR), which the flag check then sees.
+void interruptibleSleepNs(unsigned long long ns) {
+    const unsigned long long kChunkNs = 100ULL * 1000 * 1000;
+    while (ns > 0 && !g_shutdownRequested) {
+        const unsigned long long chunk = std::min(ns, kChunkNs);
+        struct timespec ts;
+        ts.tv_sec = static_cast<time_t>(chunk / 1000000000ULL);
+        ts.tv_nsec = static_cast<long>(chunk % 1000000000ULL);
+        nanosleep(&ts, nullptr);
+        ns -= chunk;
+    }
+}
 
 // Sent once after each successful connect() to make indiserver stream
 // all properties to us. INDI v1.7 specifies the version attribute on
@@ -301,7 +316,7 @@ int runLoop(const Config& cfg) {
 
     bool firstLap = true;
     while (!g_shutdownRequested) {
-        if (!firstLap && cfg.loopPauseMs > 0) interruptibleSleepMs(cfg.loopPauseMs);
+        if (!firstLap && cfg.loopPauseNs > 0) interruptibleSleepNs(cfg.loopPauseNs);
         firstLap = false;
         if (g_shutdownRequested) break;
 

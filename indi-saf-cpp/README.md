@@ -213,12 +213,13 @@ in `build/` (gitignored).
   | `-L, --outbound-link-dir` / `--inbound-link-dir` | `<dir>/link` |
   | `-P, --Port` | `7624` |
   | `-H, --indiserver-host` | `127.0.0.1` |
-  | `-p, --loopPause` (ms, >= 0) | `0` |
+  | `-p, --loopPause` (ns, >= 0) | `0` |
   | `-l, --mailbox-limit` | `100` |
   | `-r, --reconnect-delay-ms` | `1000` |
   | `-v, --verbose` (repeatable: `-vv`, `-v -v`) | off |
 
-  `-p/--loopPause` is the pause after each lap of the loop; step (D)'s
+  `-p/--loopPause` is the pause after each lap of the loop, in
+  nanoseconds (as in MagAOXApp); step (D)'s
   `select()` timeout is fixed at 100 ms. The option names follow the
   MagAOXApp conventions (`-n/--name`, `-p/loopPause`) so the later
   conversion keeps them.

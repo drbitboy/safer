@@ -3,6 +3,8 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cerrno>
+#include <cstdlib>
 #include <cstring>
 #include <getopt.h>
 #include <sstream>
@@ -46,7 +48,7 @@ void printUsage(const char* argv0, FILE* out) {
         "                                default: <inbound-dir>/link\n"
         "  -P, --Port PORT             indiserver port, default: 7624\n"
         "  -H, --indiserver-host HOST  default: 127.0.0.1\n"
-        "  -p, --loopPause MS          pause after each lap, milliseconds (>= 0);\n"
+        "  -p, --loopPause NS          pause after each lap, nanoseconds (>= 0);\n"
         "                                default: 0\n"
         "  -l, --mailbox-limit N       max records drained per lap, default: 100\n"
         "  -r, --reconnect-delay-ms MS default: 1000\n"
@@ -106,15 +108,18 @@ ParseResult parseArgs(int argc, char** argv, Config& cfg) {
                 break;
             }
             case 'p': {
-                std::string errOut;
-                int v;
-                if (!parseIntField(optarg, "loopPause", v, errOut) || v < 0) {
+                // Unsigned nanoseconds: digits only (no sign, no decimal point).
+                const std::string v = optarg;
+                char* end = nullptr;
+                errno = 0;
+                const unsigned long long n = std::strtoull(v.c_str(), &end, 10);
+                if (v.empty() || v.find_first_not_of("0123456789") != std::string::npos ||
+                    errno != 0 || end != v.c_str() + v.size()) {
                     result.ok = false;
-                    result.error = "invalid --loopPause (want an integer >= 0 ms): '" +
-                                   std::string(optarg) + "'";
+                    result.error = "invalid --loopPause (want an integer >= 0 ns): '" + v + "'";
                     return result;
                 }
-                cfg.loopPauseMs = v;
+                cfg.loopPauseNs = n;
                 break;
             }
             case 'l': {

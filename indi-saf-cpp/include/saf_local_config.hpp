@@ -49,7 +49,8 @@ struct Config {
 
     // Optional, with defaults.
     std::string indiserverHost = "127.0.0.1"; // "local" indiserver
-    int loopPauseMs = 0;         // pause after each lap (-p/--loopPause);
+    unsigned long long loopPauseNs = 0; // pause after each lap, nanoseconds
+                                  // (-p/--loopPause), as in MagAOXApp;
                                   // (D)'s select() timeout is fixed at 100 ms
     int mailboxLimit = 100;      // max records drained per (C.2) lap,
                                   // passed through to

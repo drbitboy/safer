@@ -59,14 +59,14 @@ int main() {
     {
         Config cfg;
         Args args({"saf_local", "-i", "/tmp/in", "-o", "/tmp/out", "-P", "7625",
-                    "-H", "10.0.0.5", "-p", "500", "-l", "50", "-r", "2000", "-v"});
+                    "-H", "10.0.0.5", "-p", "500000000", "-l", "50", "-r", "2000", "-v"});
         ParseResult pr = parseArgs(args.argc(), args.data(), cfg);
         assert(pr.ok && !pr.helpRequested);
         assert(cfg.inboundDir == "/tmp/in");
         assert(cfg.outboundDir == "/tmp/out");
         assert(cfg.indiserverPort == 7625);
         assert(cfg.indiserverHost == "10.0.0.5");
-        assert(cfg.loopPauseMs == 500);
+        assert(cfg.loopPauseNs == 500000000ULL);
         assert(cfg.mailboxLimit == 50);
         assert(cfg.reconnectDelayMs == 2000);
         assert(cfg.verbose == 1);
@@ -99,24 +99,24 @@ int main() {
     // --- Test 5: -P/--Port range and -p/--loopPause validation; defaults ---
     {
         Config d;
-        assert(d.indiserverPort == 7624 && d.loopPauseMs == 0);
+        assert(d.indiserverPort == 7624 && d.loopPauseNs == 0);
         Config a;
-        Args argsA({"saf_local", "--Port", "9000", "--loopPause", "250"});
+        Args argsA({"saf_local", "--Port", "9000", "--loopPause", "250000"});
         assert(parseArgs(argsA.argc(), argsA.data(), a).ok);
-        assert(a.indiserverPort == 9000 && a.loopPauseMs == 250);
+        assert(a.indiserverPort == 9000 && a.loopPauseNs == 250000ULL);
         for (const char* bad : {"0", "65536", "-1", "x"}) {
             Config b;
             Args argsB({"saf_local", "-P", bad});
             assert(!parseArgs(argsB.argc(), argsB.data(), b).ok);
         }
-        for (const char* bad : {"-1", "x", "1.5"}) {
+        for (const char* bad : {"-1", "x", "1.5", "", "99999999999999999999999"}) {
             Config c;
             Args argsC({"saf_local", "-p", bad});
             assert(!parseArgs(argsC.argc(), argsC.data(), c).ok);
         }
         Config z;
         Args argsZ({"saf_local", "-p", "0"});
-        assert(parseArgs(argsZ.argc(), argsZ.data(), z).ok && z.loopPauseMs == 0);
+        assert(parseArgs(argsZ.argc(), argsZ.data(), z).ok && z.loopPauseNs == 0);
         std::printf("Test 5 (-P/--Port, -p/--loopPause): PASS\n");
     }
 
