@@ -37,10 +37,34 @@ namespace {
 // a signal handler that does nothing but set a flag (only
 // async-signal-safe operations), with all real work happening in the
 // main loop once it observes the flag.
-volatile sig_atomic_t g_shutdownRequested = 0;
+// ---------------------------------------------------------------------
+// Program state shared by safer_init(), safer_pass(), safer_shutdown(),
+// safer_done() and the shutdown signal handler (what used to be locals
+// of runLoop(), plus the shutdown flag).
+struct SaferState {
+    // Set by the signal handler (and by safer_init() on -h or a startup
+    // failure); polled by safer_done() and the sleep helpers. Nothing
+    // else in this struct may be touched from the handler.
+    volatile sig_atomic_t shutdownRequested = 0;
+
+    bool initialized = false;        // safer_init() got all the way through
+    int exitCode = 0;                // what main() should return
+    std::unique_ptr<FileMailbox> inboundMailbox;
+    std::unique_ptr<FileMailbox> outboundMailbox;
+    LinkGate gate;                   // decides whether archiving may run
+                                     // (see link_gate.hpp)
+    LilXML* lp = nullptr;
+    int fd = -1;
+    bool needReconnect = true;
+    std::string outboundLinkDir, inboundLinkDir;
+    std::string lastUnpackErr, lastArchiveErr;
+    bool firstLap = true;
+};
+
+SaferState g_s;
 
 void shutdownHandler(int /*sig*/) {
-    g_shutdownRequested = 1;
+    g_s.shutdownRequested = 1;
 }
 
 void installShutdownHandlers() {
@@ -50,7 +74,7 @@ void installShutdownHandlers() {
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = 0; // deliberately NOT SA_RESTART: select() should be
                       // interrupted (EINTR) by these so the loop can
-                      // notice g_shutdownRequested promptly rather
+                      // notice g_s.shutdownRequested promptly rather
                       // than waiting out a full timeout.
     sigaction(SIGINT, &sa, nullptr);
     sigaction(SIGTERM, &sa, nullptr);
@@ -130,11 +154,11 @@ int connectToIndiserver(const Config& cfg) {
 
 // Sleeps for ms milliseconds using select() (so it's interruptible by
 // the shutdown signal handlers, same as the main loop's select()) --
-// checked in small increments against g_shutdownRequested rather than
+// checked in small increments against g_s.shutdownRequested rather than
 // one uninterruptible block, so a reconnect wait doesn't delay
 // shutdown by the full reconnectDelayMs.
 void interruptibleSleepMs(int ms) {
-    while (ms > 0 && !g_shutdownRequested) {
+    while (ms > 0 && !g_s.shutdownRequested) {
         int chunk = std::min(ms, 100);
         struct timeval tv;
         tv.tv_sec = chunk / 1000;
@@ -149,11 +173,11 @@ void interruptibleSleepMs(int ms) {
 const int kSelectTimeoutMs = 100;
 
 // Like interruptibleSleepMs() but in nanoseconds: sleeps in chunks of at
-// most 100 ms, re-checking g_shutdownRequested between chunks; a signal
+// most 100 ms, re-checking g_s.shutdownRequested between chunks; a signal
 // ends the current chunk early (EINTR), which the flag check then sees.
 void interruptibleSleepNs(unsigned long long ns) {
     const unsigned long long kChunkNs = 100ULL * 1000 * 1000;
-    while (ns > 0 && !g_shutdownRequested) {
+    while (ns > 0 && !g_s.shutdownRequested) {
         const unsigned long long chunk = std::min(ns, kChunkNs);
         struct timespec ts;
         ts.tv_sec = static_cast<time_t>(chunk / 1000000000ULL);
@@ -283,34 +307,10 @@ void handleControlVector(const Config& cfg, LinkGate& gate, XMLEle* root,
 } // namespace
 
 
-// ---------------------------------------------------------------------
-// Program state shared by safer_init(), safer_pass() and
-// safer_shutdown() (what used to be locals of runLoop()).
-// ---------------------------------------------------------------------
-namespace {
-
-struct SaferState {
-    bool initialized = false;        // safer_init() got all the way through
-    int exitCode = 0;                // what main() should return
-    std::unique_ptr<FileMailbox> inboundMailbox;
-    std::unique_ptr<FileMailbox> outboundMailbox;
-    LinkGate gate;                   // decides whether archiving may run
-                                     // (see link_gate.hpp)
-    LilXML* lp = nullptr;
-    int fd = -1;
-    bool needReconnect = true;
-    std::string outboundLinkDir, inboundLinkDir;
-    std::string lastUnpackErr, lastArchiveErr;
-    bool firstLap = true;
-};
-
-SaferState g_s;
-
-} // namespace
 
 // Parses the command line, validates it, and sets up everything the loop
 // needs. On -h, a bad command line, or a setup failure it records the
-// exit code and sets g_shutdownRequested so main()'s loop never runs.
+// exit code and sets g_s.shutdownRequested so main()'s loop never runs.
 void safer_init(int argc, char** argv, Config& cfg) {
     ParseResult pr = parseArgs(argc, argv, cfg);
     // Prefix for startup errors: the configured name if -n/--name was
@@ -319,14 +319,14 @@ void safer_init(int argc, char** argv, Config& cfg) {
     if (pr.helpRequested) {
         printUsage(argv[0], stdout);
         g_s.exitCode = 0;
-        g_shutdownRequested = 1;
+        g_s.shutdownRequested = 1;
         return;
     }
     if (!pr.ok) {
         std::fprintf(stderr, "%s: %s\n\n", who.c_str(), pr.error.c_str());
         printUsage(argv[0], stderr);
         g_s.exitCode = 2;
-        g_shutdownRequested = 1;
+        g_s.shutdownRequested = 1;
         return;
     }
 
@@ -335,7 +335,7 @@ void safer_init(int argc, char** argv, Config& cfg) {
         std::fprintf(stderr, "%s: %s\n\n", who.c_str(), errOut.c_str());
         printUsage(argv[0], stderr);
         g_s.exitCode = 2;
-        g_shutdownRequested = 1;
+        g_s.shutdownRequested = 1;
         return;
     }
 
@@ -360,7 +360,7 @@ void safer_init(int argc, char** argv, Config& cfg) {
     if (g_s.lp == nullptr) {
         logErr("newLilXML() failed");
         g_s.exitCode = 1;
-        g_shutdownRequested = 1;
+        g_s.shutdownRequested = 1;
         return;
     }
 
@@ -390,7 +390,7 @@ void safer_pass(const Config& cfg) {
 
     if (!firstLap && cfg.loopPauseNs > 0) interruptibleSleepNs(cfg.loopPauseNs);
     firstLap = false;
-    if (g_shutdownRequested) return;
+    if (g_s.shutdownRequested) return;
 
     // --- (A) unpack the archive delivered by the link sender ---
     // First, so ready.* files already waiting in the inbound mailbox
@@ -559,7 +559,7 @@ void safer_pass(const Config& cfg) {
     if (rc < 0) {
         if (errno == EINTR) {
             return; // signal (possibly shutdown) -- back to (A) on the
-                    // next pass; main's g_shutdownRequested check
+                    // next pass; main's g_s.shutdownRequested check
                     // handles actual shutdown
         }
         logErr("select() failed: " + std::string(std::strerror(errno)));
@@ -632,6 +632,10 @@ void safer_pass(const Config& cfg) {
 
 }
 
+// True once a shutdown was requested (signal, -h, or a startup failure):
+// main()'s loop runs while this is false.
+bool safer_done() { return g_s.shutdownRequested != 0; }
+
 // Everything after the loop: closes the connection and frees the parser
 // (if safer_init() got that far). Returns the exit code for main().
 int safer_shutdown() {
@@ -651,7 +655,7 @@ int safer_shutdown() {
 int main(int argc, char** argv) {
     saf::Config cfg;
     saf::safer_init(argc, argv, cfg);
-    while (!saf::g_shutdownRequested) {
+    while (!saf::safer_done()) {
         saf::safer_pass(cfg);
     }
     return saf::safer_shutdown();

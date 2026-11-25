@@ -51,17 +51,21 @@ namespace saf {
 
 // main() is just:
 //     safer_init(argc, argv, cfg);
-//     while (!g_shutdownRequested) safer_pass(cfg);
+//     while (!safer_done()) safer_pass(cfg);
 //     return safer_shutdown();
 
 // Parses and validates the command line, then sets up the loop (signal
 // handlers, logging, mailboxes, XML parser). On -h, a bad command line or
-// a setup failure it records the exit code and sets g_shutdownRequested
+// a setup failure it records the exit code and requests shutdown
 // so the loop never runs.
 void safer_init(int argc, char** argv, Config& cfg);
 
 // One lap of the loop described above (steps A-D).
 void safer_pass(const Config& cfg);
+
+// True once a shutdown was requested (SIGINT/SIGTERM, -h, or a startup
+// failure); the loop in main() runs while this is false.
+bool safer_done();
 
 // Everything after the loop: closes the connection, frees the parser.
 // Returns the exit code for main() to return.
