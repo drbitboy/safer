@@ -9,7 +9,7 @@
 //             file renames and file deletions
 //
 // Not thread-safe to change the level while other threads log; set it
-// once at startup (runLoop does).
+// once at startup (safer_init does).
 
 #pragma once
 #include <string>

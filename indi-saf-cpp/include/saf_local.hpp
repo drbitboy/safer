@@ -40,7 +40,7 @@
 // Config, INI-file parsing, and CLI-argument parsing all live in
 // saf_local_config.hpp/.cpp instead of here, specifically so that
 // logic has no dependency on liblilxml and can be linked/tested on
-// its own -- runLoop() below is the only thing in this file, and it's
+// its own -- safer_init()/safer_pass()/safer_shutdown() below are the only things in this file, and it's
 // the only thing that actually needs liblilxml, mailbox.hpp, and
 // indi_xml_bridge.hpp.
 
@@ -49,9 +49,22 @@
 
 namespace saf {
 
-// Runs the loop described above. Blocks until a shutdown signal
-// (SIGINT/SIGTERM) is received or an unrecoverable error occurs.
-// Returns an exit code suitable for main() to return directly.
-int runLoop(const Config& cfg);
+// main() is just:
+//     safer_init(argc, argv, cfg);
+//     while (!g_shutdownRequested) safer_pass(cfg);
+//     return safer_shutdown();
+
+// Parses and validates the command line, then sets up the loop (signal
+// handlers, logging, mailboxes, XML parser). On -h, a bad command line or
+// a setup failure it records the exit code and sets g_shutdownRequested
+// so the loop never runs.
+void safer_init(int argc, char** argv, Config& cfg);
+
+// One lap of the loop described above (steps A-D).
+void safer_pass(const Config& cfg);
+
+// Everything after the loop: closes the connection, frees the parser.
+// Returns the exit code for main() to return.
+int safer_shutdown();
 
 } // namespace saf

@@ -196,7 +196,7 @@ in `build/` (gitignored).
   `../test/saf_local_config_test.cpp` (`make test-config`: defaults,
   required-field validation, CLI flags, `--help`, bad input, `-P` and
   `-p` ranges, removed options rejected, link dirs, `-v` levels,
-  `-n`). `saf_local.cpp`'s `runLoop()` itself has its liblilxml
+  `-n`). `saf_local.cpp`'s `safer_pass()` itself has its liblilxml
   parsing layer verified for real now too (see "Vendored
   liblilxml/base64 source" below) — what's specifically NOT
   runtime-tested is the socket/`select()` plumbing, since there's no
@@ -253,7 +253,7 @@ in `build/` (gitignored).
   fork-to-background) or TLS/auth for the indiserver connection — out
   of scope unless indiserver actually needs them.
 
-  `runLoop()`'s previously-flagged `// VERIFY:` on `parseXMLChunk()`
+  `safer_pass()`'s previously-flagged `// VERIFY:` on `parseXMLChunk()`
   is now **confirmed correct**, not just assumed — see "Vendored
   liblilxml/base64 source" below.
 
@@ -344,7 +344,7 @@ takes only a `MailboxElement` (no separate bool) and derives the
   (the indiserver-facing side).
 - A real `ILinkApi` implementation (link transport mechanism still
   TBD).
-- Runtime testing of `saf_local.cpp`'s `runLoop()` end-to-end —
+- Runtime testing of `saf_local.cpp`'s `safer_pass()` end-to-end —
   `../test/lilxml_integration_test.cpp` now verifies the parsing layer
   for real (`parseXMLChunk()`, split-message reassembly,
   `recomposeVectorXml()` round-tripping), since `liblilxml` is

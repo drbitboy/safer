@@ -21,6 +21,7 @@ extern "C" {
 #include <filesystem>
 #include <system_error>
 #include <fcntl.h>
+#include <memory>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <sys/select.h>
@@ -56,7 +57,7 @@ void installShutdownHandlers() {
 }
 
 // Level 1 (-v) and level 2 (-vv) diagnostics. Both go through the
-// shared logger (saf_log.hpp), which runLoop() configures from
+// shared logger (saf_log.hpp), which safer_init() configures from
 // cfg.verbose, so library code (mailbox, archiver) logs at the same
 // levels.
 void logv(const Config&, const std::string& msg) { logAt(1, msg); }
@@ -281,14 +282,69 @@ void handleControlVector(const Config& cfg, LinkGate& gate, XMLEle* root,
 
 } // namespace
 
-int runLoop(const Config& cfg) {
+
+// ---------------------------------------------------------------------
+// Program state shared by safer_init(), safer_pass() and
+// safer_shutdown() (what used to be locals of runLoop()).
+// ---------------------------------------------------------------------
+namespace {
+
+struct SaferState {
+    bool initialized = false;        // safer_init() got all the way through
+    int exitCode = 0;                // what main() should return
+    std::unique_ptr<FileMailbox> inboundMailbox;
+    std::unique_ptr<FileMailbox> outboundMailbox;
+    LinkGate gate;                   // decides whether archiving may run
+                                     // (see link_gate.hpp)
+    LilXML* lp = nullptr;
+    int fd = -1;
+    bool needReconnect = true;
+    std::string outboundLinkDir, inboundLinkDir;
+    std::string lastUnpackErr, lastArchiveErr;
+    bool firstLap = true;
+};
+
+SaferState g_s;
+
+} // namespace
+
+// Parses the command line, validates it, and sets up everything the loop
+// needs. On -h, a bad command line, or a setup failure it records the
+// exit code and sets g_shutdownRequested so main()'s loop never runs.
+void safer_init(int argc, char** argv, Config& cfg) {
+    ParseResult pr = parseArgs(argc, argv, cfg);
+    // Prefix for startup errors: the configured name if -n/--name was
+    // parsed before the failure, else the default.
+    const std::string who = cfg.name.empty() ? "saf_local" : cfg.name;
+    if (pr.helpRequested) {
+        printUsage(argv[0], stdout);
+        g_s.exitCode = 0;
+        g_shutdownRequested = 1;
+        return;
+    }
+    if (!pr.ok) {
+        std::fprintf(stderr, "%s: %s\n\n", who.c_str(), pr.error.c_str());
+        printUsage(argv[0], stderr);
+        g_s.exitCode = 2;
+        g_shutdownRequested = 1;
+        return;
+    }
+
+    std::string errOut;
+    if (!validateConfig(cfg, errOut)) {
+        std::fprintf(stderr, "%s: %s\n\n", who.c_str(), errOut.c_str());
+        printUsage(argv[0], stderr);
+        g_s.exitCode = 2;
+        g_shutdownRequested = 1;
+        return;
+    }
+
     installShutdownHandlers();
     setLogLevel(cfg.verbose);
     setLogName(cfg.name);
 
-    FileMailbox inboundMailbox(cfg.inboundDir);
-    FileMailbox outboundMailbox(cfg.outboundDir);
-    LinkGate gate; // decides whether archiving may run (see link_gate.hpp)
+    g_s.inboundMailbox.reset(new FileMailbox(cfg.inboundDir));
+    g_s.outboundMailbox.reset(new FileMailbox(cfg.outboundDir));
 
     // VERIFY: parseXMLChunk's exact return contract isn't documented
     // in the lilxml.h we have (no doc comment on that declaration).
@@ -299,296 +355,304 @@ int runLoop(const Config& cfg) {
     // call); caller owns the returned elements and must delXMLEle()
     // each one once done with it. If MagAO-X's fork differs (e.g. a
     // separate count rather than NULL-termination, or different
-    // ownership), this loop's (D.2) handling below needs adjusting.
-    LilXML* lp = newLilXML();
-    if (lp == nullptr) {
+    // ownership), safer_pass()'s (D.2) handling below needs adjusting.
+    g_s.lp = newLilXML();
+    if (g_s.lp == nullptr) {
         logErr("newLilXML() failed");
-        return 1;
+        g_s.exitCode = 1;
+        g_shutdownRequested = 1;
+        return;
     }
 
-    int fd = -1;
-    bool needReconnect = true;
+    g_s.fd = -1;
+    g_s.needReconnect = true;
+    g_s.outboundLinkDir = cfg.outboundLinkDirResolved();
+    g_s.inboundLinkDir = cfg.inboundLinkDirResolved();
+    g_s.firstLap = true;
+    g_s.initialized = true;
+}
 
-    int exitCode = 0;
-    const std::string outboundLinkDir = cfg.outboundLinkDirResolved();
-    const std::string inboundLinkDir = cfg.inboundLinkDirResolved();
-    std::string lastUnpackErr, lastArchiveErr;
+// One lap of the loop (steps A-D); what used to be the body of
+// runLoop()'s while loop. Returns early (the old `continue`) when the
+// rest of the lap should be skipped.
+void safer_pass(const Config& cfg) {
+    FileMailbox& inboundMailbox = *g_s.inboundMailbox;
+    FileMailbox& outboundMailbox = *g_s.outboundMailbox;
+    LinkGate& gate = g_s.gate;
+    LilXML* lp = g_s.lp;
+    int& fd = g_s.fd;
+    bool& needReconnect = g_s.needReconnect;
+    bool& firstLap = g_s.firstLap;
+    const std::string& outboundLinkDir = g_s.outboundLinkDir;
+    const std::string& inboundLinkDir = g_s.inboundLinkDir;
+    std::string& lastUnpackErr = g_s.lastUnpackErr;
+    std::string& lastArchiveErr = g_s.lastArchiveErr;
 
-    bool firstLap = true;
-    while (!g_shutdownRequested) {
-        if (!firstLap && cfg.loopPauseNs > 0) interruptibleSleepNs(cfg.loopPauseNs);
-        firstLap = false;
-        if (g_shutdownRequested) break;
+    if (!firstLap && cfg.loopPauseNs > 0) interruptibleSleepNs(cfg.loopPauseNs);
+    firstLap = false;
+    if (g_shutdownRequested) return;
 
-        // --- (A) unpack the archive delivered by the link sender ---
-        // First, so ready.* files already waiting in the inbound mailbox
-        // are replaced by the (newer) archive contents before step C
-        // sends them to indiserver. Local file work only: independent of
-        // the indiserver connection and of the link state.
-        {
-            UnpackReport ur = unpackInbound(cfg.inboundDir, inboundLinkDir);
-            switch (ur.result) {
-                case UnpackResult::Unpacked:
-                    lastUnpackErr.clear();
-                    logv(cfg, "unpacked " + std::to_string(ur.fileCount) +
-                                  " record(s) from " + inboundLinkDir + "/sending.zip");
-                    break;
-                case UnpackResult::Rejected:
-                    lastUnpackErr.clear();
-                    logErr("REJECTED bad archive (" + ur.error + "); moved to " +
-                           ur.rejectedPath);
-                    break;
-                case UnpackResult::Error:
-                    logErrOnce(lastUnpackErr, "unpack failed: " + ur.error);
-                    break;
-                case UnpackResult::NothingToDo:
-                    lastUnpackErr.clear();
-                    break;
-            }
+    // --- (A) unpack the archive delivered by the link sender ---
+    // First, so ready.* files already waiting in the inbound mailbox
+    // are replaced by the (newer) archive contents before step C
+    // sends them to indiserver. Local file work only: independent of
+    // the indiserver connection and of the link state.
+    {
+        UnpackReport ur = unpackInbound(cfg.inboundDir, inboundLinkDir);
+        switch (ur.result) {
+            case UnpackResult::Unpacked:
+                lastUnpackErr.clear();
+                logv(cfg, "unpacked " + std::to_string(ur.fileCount) +
+                              " record(s) from " + inboundLinkDir + "/sending.zip");
+                break;
+            case UnpackResult::Rejected:
+                lastUnpackErr.clear();
+                logErr("REJECTED bad archive (" + ur.error + "); moved to " +
+                       ur.rejectedPath);
+                break;
+            case UnpackResult::Error:
+                logErrOnce(lastUnpackErr, "unpack failed: " + ur.error);
+                break;
+            case UnpackResult::NothingToDo:
+                lastUnpackErr.clear();
+                break;
+        }
+    }
+
+    // --- (B) archive outbound mailbox files for the link sender ---
+    // gate.isUp() spends a stop count when the time-based gate is
+    // closed, so call it only when this lap would really make an archive:
+    // something is pending and no archive is already in flight. Otherwise
+    // use the time-based gate alone (no count spent).
+    bool archiveNow;
+    {
+        std::error_code fsec;
+        const bool inFlight =
+            std::filesystem::exists(std::filesystem::path(outboundLinkDir) / "sending.zip", fsec);
+        const bool spendCount = outboundMailbox.pendingCount() > 0 && !inFlight;
+        archiveNow = spendCount ? gate.isUp() : gate.isUpAt(std::time(nullptr));
+    }
+    if (archiveNow) {
+        ArchiveReport ar = archiveOutbound(cfg.outboundDir, outboundLinkDir);
+        if (ar.result == ArchiveResult::Error) {
+            logErrOnce(lastArchiveErr, "archive failed: " + ar.error);
+        } else {
+            lastArchiveErr.clear();
+        }
+        if (ar.result == ArchiveResult::Archived) {
+            logv(cfg, "archived " + std::to_string(ar.fileCount) +
+                          " record(s) into " + outboundLinkDir + "/sending.zip");
+        } else if (ar.result == ArchiveResult::Busy && ar.fileCount > 0) {
+            logv(cfg, "removed " + std::to_string(ar.fileCount) +
+                          " orphaned sending.* file(s) already in the archive");
+        }
+    }
+
+    if (needReconnect) {
+        if (fd >= 0) {
+            close(fd);
+            fd = -1;
+        }
+        logv(cfg, "connecting to " + cfg.indiserverHost + ":" +
+                      std::to_string(cfg.indiserverPort) + " ...");
+        fd = connectToIndiserver(cfg);
+        if (fd < 0) {
+            interruptibleSleepMs(cfg.reconnectDelayMs);
+            return; // try again next pass (or exit, if shutdown was
+                    // requested during the sleep -- checked by main)
+        }
+        logv(cfg, "connected");
+
+        // Ask indiserver to start sending us def*/set* updates for
+        // all devices/properties. Sent once per successful connect
+        // (so again after every reconnect). The socket was just
+        // created, so this ~30-byte message fits in the send
+        // buffer; a short write or error is treated as a dead
+        // connection and triggers a reconnect.
+        if (!sendAllBlocking(fd, kGetPropertiesMsg)) {
+            logErr("send(getProperties) failed: " +
+                    std::string(std::strerror(errno)));
+            interruptibleSleepMs(cfg.reconnectDelayMs);
+            return; // needReconnect is still true
+        }
+        logv(cfg, std::string("sent ") + kGetPropertiesMsg);
+        needReconnect = false;
+    }
+
+    // --- (C) check inbound mailbox for pending records ---
+    auto pending = inboundMailbox.peekPending(cfg.mailboxLimit);
+
+    // (C.1) none pending -> falls through to (D) below (the for
+    // loop over an empty vector is a no-op).
+    // (C.2) pending -> recompose + send each.
+    bool writeBlocked = false;
+    for (const auto& rec : pending) {
+        if (writeBlocked) break; // stop draining this lap once we
+                                  // hit EAGAIN; remaining files
+                                  // are retried next lap (still
+                                  // sending.*, per mailbox.hpp)
+
+        std::string xml;
+        try {
+            xml = recomposeVectorXml(rec.el);
+        } catch (const std::exception& ex) {
+            logErr("recompose failed for " + rec.el.msg_type + " " +
+                    rec.el.device + "." + rec.el.property + "." +
+                    rec.el.element + ": " + ex.what());
+            continue; // leave the malformed file for inspection,
+                      // move on to the next pending record
         }
 
-        // --- (B) archive outbound mailbox files for the link sender ---
-        // gate.isUp() spends a stop count when the time-based gate is
-        // closed, so call it only when this lap would really make an archive:
-        // something is pending and no archive is already in flight. Otherwise
-        // use the time-based gate alone (no count spent).
-        bool archiveNow;
-        {
-            std::error_code fsec;
-            const bool inFlight =
-                std::filesystem::exists(std::filesystem::path(outboundLinkDir) / "sending.zip", fsec);
-            const bool spendCount = outboundMailbox.pendingCount() > 0 && !inFlight;
-            archiveNow = spendCount ? gate.isUp() : gate.isUpAt(std::time(nullptr));
-        }
-        if (archiveNow) {
-            ArchiveReport ar = archiveOutbound(cfg.outboundDir, outboundLinkDir);
-            if (ar.result == ArchiveResult::Error) {
-                logErrOnce(lastArchiveErr, "archive failed: " + ar.error);
-            } else {
-                lastArchiveErr.clear();
+        size_t totalSent = 0;
+        bool sendFailed = false;
+        while (totalSent < xml.size()) {
+            ssize_t n = send(fd, xml.data() + totalSent,
+                              xml.size() - totalSent, MSG_NOSIGNAL);
+            if (n > 0) {
+                totalSent += static_cast<size_t>(n);
+                continue;
             }
-            if (ar.result == ArchiveResult::Archived) {
-                logv(cfg, "archived " + std::to_string(ar.fileCount) +
-                              " record(s) into " + outboundLinkDir + "/sending.zip");
-            } else if (ar.result == ArchiveResult::Busy && ar.fileCount > 0) {
-                logv(cfg, "removed " + std::to_string(ar.fileCount) +
-                              " orphaned sending.* file(s) already in the archive");
-            }
-        }
-
-        if (needReconnect) {
-            if (fd >= 0) {
-                close(fd);
-                fd = -1;
-            }
-            logv(cfg, "connecting to " + cfg.indiserverHost + ":" +
-                          std::to_string(cfg.indiserverPort) + " ...");
-            fd = connectToIndiserver(cfg);
-            if (fd < 0) {
-                interruptibleSleepMs(cfg.reconnectDelayMs);
-                continue; // try again (or exit, if shutdown was requested
-                          // during the sleep -- checked at top of loop)
-            }
-            logv(cfg, "connected");
-
-            // Ask indiserver to start sending us def*/set* updates for
-            // all devices/properties. Sent once per successful connect
-            // (so again after every reconnect). The socket was just
-            // created, so this ~30-byte message fits in the send
-            // buffer; a short write or error is treated as a dead
-            // connection and triggers a reconnect.
-            if (!sendAllBlocking(fd, kGetPropertiesMsg)) {
-                logErr("send(getProperties) failed: " +
-                        std::string(std::strerror(errno)));
-                interruptibleSleepMs(cfg.reconnectDelayMs);
-                continue; // needReconnect is still true
-            }
-            logv(cfg, std::string("sent ") + kGetPropertiesMsg);
-            needReconnect = false;
-        }
-
-        // --- (C) check inbound mailbox for pending records ---
-        auto pending = inboundMailbox.peekPending(cfg.mailboxLimit);
-
-        // (C.1) none pending -> falls through to (D) below (the for
-        // loop over an empty vector is a no-op).
-        // (C.2) pending -> recompose + send each.
-        bool writeBlocked = false;
-        for (const auto& rec : pending) {
-            if (writeBlocked) break; // stop draining this lap once we
-                                      // hit EAGAIN; remaining files
-                                      // are retried next lap (still
-                                      // sending.*, per mailbox.hpp)
-
-            std::string xml;
-            try {
-                xml = recomposeVectorXml(rec.el);
-            } catch (const std::exception& ex) {
-                logErr("recompose failed for " + rec.el.msg_type + " " +
-                        rec.el.device + "." + rec.el.property + "." +
-                        rec.el.element + ": " + ex.what());
-                continue; // leave the malformed file for inspection,
-                          // move on to the next pending record
-            }
-
-            size_t totalSent = 0;
-            bool sendFailed = false;
-            while (totalSent < xml.size()) {
-                ssize_t n = send(fd, xml.data() + totalSent,
-                                  xml.size() - totalSent, MSG_NOSIGNAL);
-                if (n > 0) {
-                    totalSent += static_cast<size_t>(n);
-                    continue;
-                }
-                if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
-                    // Socket send buffer is full right now. Per the
-                    // design discussion: don't busy-loop on this --
-                    // leave the rest of xml unsent, and since
-                    // MailboxElement records are small, treat a
-                    // partial send as "not sent" rather than trying
-                    // to resume mid-message next lap (simpler, and
-                    // the file is still sending.* either way so
-                    // nothing is lost).
-                    writeBlocked = true;
-                    sendFailed = true;
-                    break;
-                }
-                if (n < 0 && errno == EINTR) {
-                    continue; // retry the send
-                }
-                // Any other error: treat the connection as gone.
-                logErr("send() failed: " + std::string(std::strerror(errno)));
-                needReconnect = true;
+            if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+                // Socket send buffer is full right now. Per the
+                // design discussion: don't busy-loop on this --
+                // leave the rest of xml unsent, and since
+                // MailboxElement records are small, treat a
+                // partial send as "not sent" rather than trying
+                // to resume mid-message next lap (simpler, and
+                // the file is still sending.* either way so
+                // nothing is lost).
+                writeBlocked = true;
                 sendFailed = true;
-                writeBlocked = true; // stop draining this lap too
                 break;
             }
-
-            if (!sendFailed) {
-                inboundMailbox.erase(rec.filepath);
-                logv(cfg, "sent " + rec.el.msg_type + " " + rec.el.device + "." +
-                              rec.el.property + "." + rec.el.element);
+            if (n < 0 && errno == EINTR) {
+                continue; // retry the send
             }
-        }
-
-        if (needReconnect) {
-            continue; // skip (D) this lap, top of loop will reconnect
-        }
-
-        // --- (D) select() on the indiserver read fd, with timeout ---
-        fd_set readfds;
-        FD_ZERO(&readfds);
-        FD_SET(fd, &readfds);
-        struct timeval tv;
-        tv.tv_sec = 0;
-        tv.tv_usec = kSelectTimeoutMs * 1000;
-
-        int rc = select(fd + 1, &readfds, nullptr, nullptr, &tv);
-        if (rc < 0) {
-            if (errno == EINTR) {
-                continue; // signal (possibly shutdown) -- loop back to
-                          // (A); top-of-loop g_shutdownRequested check
-                          // handles actual shutdown
-            }
-            logErr("select() failed: " + std::string(std::strerror(errno)));
+            // Any other error: treat the connection as gone.
+            logErr("send() failed: " + std::string(std::strerror(errno)));
             needReconnect = true;
-            continue;
-        }
-        if (rc == 0) {
-            // (D.1) timeout, nothing readable -> back to (A)
-            continue;
+            sendFailed = true;
+            writeBlocked = true; // stop draining this lap too
+            break;
         }
 
-        // (D.2) readable
-        char buf[4096];
-        ssize_t n = recv(fd, buf, sizeof(buf), 0);
-        if (n > 0) {
-            // parseXMLChunk unconditionally writes to errmsg (it does
-            // errmsg[0] = '\0' on entry), so it must not be NULL.
-            char errmsg[1024];
-            XMLEle** roots = parseXMLChunk(lp, buf, static_cast<int>(n), errmsg);
-            if (errmsg[0] != '\0') {
-                // Parse error somewhere in this chunk; the parser has
-                // reset itself and any complete elements are still
-                // returned in roots, so keep going.
-                logErr(std::string("XML parse error: ") + errmsg);
-            }
-            if (roots != nullptr) {
-                for (int i = 0; roots[i] != nullptr; ++i) { // VERIFY: NULL-terminated
-                    XMLEle* root = roots[i];
-                    std::string tag = tagXMLEle(root);
-                    std::string msgType, vecType;
-                    if (parseVectorTag(tag, msgType, vecType) &&
-                        logName() == findXMLAttValu(root, "device")) {
-                        handleControlVector(cfg, gate, root, tag);
-                    } else if (parseVectorTag(tag, msgType, vecType)) {
-                        auto elements = decomposeVector(root, vecType, msgType);
-                        if (logLevel() >= 2) {
-                            std::string names;
-                            for (const auto& el : elements) {
-                                if (!names.empty()) names += ",";
-                                names += el.element;
-                            }
-                            logv2(cfg, "received " + tag + " " +
-                                           findXMLAttValu(root, "device") + "." +
-                                           findXMLAttValu(root, "name") +
-                                           ".{" + names + "}");
-                        }
-                        for (const auto& el : elements) {
-                            outboundMailbox.upsert(el);
-                        }
-                    } else {
-                        logv(cfg, "skipped non-vector or unhandled message: " + tag);
-                    }
-                    delXMLEle(root); // caller owns each element (confirmed in lilxml.c)
-                }
-                free(roots); // ...and the malloc'd array itself
-            }
-        } else if (n == 0) {
-            logv(cfg, "indiserver closed the connection");
-            needReconnect = true;
-        } else {
-            if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                // Spurious wakeup -- nothing to do, loop back to (A).
-            } else if (errno == EINTR) {
-                // Loop back to (A); shutdown checked at top of loop.
-            } else {
-                logErr("recv() failed: " + std::string(std::strerror(errno)));
-                needReconnect = true;
-            }
+        if (!sendFailed) {
+            inboundMailbox.erase(rec.filepath);
+            logv(cfg, "sent " + rec.el.msg_type + " " + rec.el.device + "." +
+                          rec.el.property + "." + rec.el.element);
         }
     }
 
-    logv(cfg, "shutting down");
-    if (fd >= 0) close(fd);
-    delLilXML(lp);
-    return exitCode;
+    if (needReconnect) {
+        return; // skip (D) this pass, next pass will reconnect
+    }
+
+    // --- (D) select() on the indiserver read fd, with timeout ---
+    fd_set readfds;
+    FD_ZERO(&readfds);
+    FD_SET(fd, &readfds);
+    struct timeval tv;
+    tv.tv_sec = 0;
+    tv.tv_usec = kSelectTimeoutMs * 1000;
+
+    int rc = select(fd + 1, &readfds, nullptr, nullptr, &tv);
+    if (rc < 0) {
+        if (errno == EINTR) {
+            return; // signal (possibly shutdown) -- back to (A) on the
+                    // next pass; main's g_shutdownRequested check
+                    // handles actual shutdown
+        }
+        logErr("select() failed: " + std::string(std::strerror(errno)));
+        needReconnect = true;
+        return;
+    }
+    if (rc == 0) {
+        // (D.1) timeout, nothing readable -> back to (A)
+        return;
+    }
+
+    // (D.2) readable
+    char buf[4096];
+    ssize_t n = recv(fd, buf, sizeof(buf), 0);
+    if (n > 0) {
+        // parseXMLChunk unconditionally writes to errmsg (it does
+        // errmsg[0] = '\0' on entry), so it must not be NULL.
+        char errmsg[1024];
+        XMLEle** roots = parseXMLChunk(lp, buf, static_cast<int>(n), errmsg);
+        if (errmsg[0] != '\0') {
+            // Parse error somewhere in this chunk; the parser has
+            // reset itself and any complete elements are still
+            // returned in roots, so keep going.
+            logErr(std::string("XML parse error: ") + errmsg);
+        }
+        if (roots != nullptr) {
+            for (int i = 0; roots[i] != nullptr; ++i) { // VERIFY: NULL-terminated
+                XMLEle* root = roots[i];
+                std::string tag = tagXMLEle(root);
+                std::string msgType, vecType;
+                if (parseVectorTag(tag, msgType, vecType) &&
+                    logName() == findXMLAttValu(root, "device")) {
+                    handleControlVector(cfg, gate, root, tag);
+                } else if (parseVectorTag(tag, msgType, vecType)) {
+                    auto elements = decomposeVector(root, vecType, msgType);
+                    if (logLevel() >= 2) {
+                        std::string names;
+                        for (const auto& el : elements) {
+                            if (!names.empty()) names += ",";
+                            names += el.element;
+                        }
+                        logv2(cfg, "received " + tag + " " +
+                                       findXMLAttValu(root, "device") + "." +
+                                       findXMLAttValu(root, "name") +
+                                       ".{" + names + "}");
+                    }
+                    for (const auto& el : elements) {
+                        outboundMailbox.upsert(el);
+                    }
+                } else {
+                    logv(cfg, "skipped non-vector or unhandled message: " + tag);
+                }
+                delXMLEle(root); // caller owns each element (confirmed in lilxml.c)
+            }
+            free(roots); // ...and the malloc'd array itself
+        }
+    } else if (n == 0) {
+        logv(cfg, "indiserver closed the connection");
+        needReconnect = true;
+    } else {
+        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+            // Spurious wakeup -- nothing to do, loop back to (A).
+        } else if (errno == EINTR) {
+            // Loop back to (A); shutdown checked at top of loop.
+        } else {
+            logErr("recv() failed: " + std::string(std::strerror(errno)));
+            needReconnect = true;
+        }
+    }
+
+}
+
+// Everything after the loop: closes the connection and frees the parser
+// (if safer_init() got that far). Returns the exit code for main().
+int safer_shutdown() {
+    if (g_s.initialized) {
+        logAt(1, "shutting down");
+        if (g_s.fd >= 0) close(g_s.fd);
+        delLilXML(g_s.lp);
+        g_s.lp = nullptr;
+        g_s.fd = -1;
+        g_s.initialized = false;
+    }
+    return g_s.exitCode;
 }
 
 } // namespace saf
 
 int main(int argc, char** argv) {
     saf::Config cfg;
-    saf::ParseResult pr = saf::parseArgs(argc, argv, cfg);
-    // Prefix for startup errors: the configured name if -n/--name (or the
-    // INI name) was parsed before the failure, else the default.
-    const std::string who = cfg.name.empty() ? "saf_local" : cfg.name;
-    if (pr.helpRequested) {
-        saf::printUsage(argv[0], stdout);
-        return 0;
+    saf::safer_init(argc, argv, cfg);
+    while (!saf::g_shutdownRequested) {
+        saf::safer_pass(cfg);
     }
-    if (!pr.ok) {
-        std::fprintf(stderr, "%s: %s\n\n", who.c_str(), pr.error.c_str());
-        saf::printUsage(argv[0], stderr);
-        return 2;
-    }
-
-    std::string errOut;
-    if (!saf::validateConfig(cfg, errOut)) {
-        std::fprintf(stderr, "%s: %s\n\n", who.c_str(), errOut.c_str());
-        saf::printUsage(argv[0], stderr);
-        return 2;
-    }
-
-    return saf::runLoop(cfg);
+    return saf::safer_shutdown();
 }

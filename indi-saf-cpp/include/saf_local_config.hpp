@@ -85,7 +85,7 @@ ParseResult parseArgs(int argc, char** argv, Config& cfg);
 // (see Config above), so this only fails if something explicitly set
 // one of them to empty/0 -- not a
 // normal case, but still checked rather than silently passing an
-// empty directory or port 0 through to runLoop().
+// empty directory or port 0 through to safer_init().
 bool validateConfig(const Config& cfg, std::string& errOut);
 
 // Prints usage/help text to the given stream.
